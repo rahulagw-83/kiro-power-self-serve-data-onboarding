@@ -1,18 +1,19 @@
 ---
 name: deploying-cdk-pipeline
 description: >-
-  Deploy, validate, and promote CDK-based ingestion pipeline stacks across environments
-  (dev, test, prod). Handles cdk diff, deploy, post-deploy verification, promotion
-  gates, and rollback. Triggers on: deploy pipeline, cdk deploy, promote to prod,
-  deploy to dev, deploy stack, release pipeline, promote environment.
+  Deploy, validate, and promote ingestion pipeline infrastructure across environments
+  (dev, test, prod). Supports AWS CDK (Python), Terraform (HCL), and CloudFormation
+  (YAML) based on user preference. Handles diff/plan, deploy/apply, post-deploy
+  verification, promotion gates, and rollback. Triggers on: deploy pipeline, cdk deploy,
+  terraform apply, promote to prod, deploy to dev, deploy stack, release pipeline.
   Do NOT use for creating connections (use connecting-to-data-source), writing ETL
   code (use ingesting-into-data-lake), or running queries (use querying-data-lake).
-version: 1
+version: 2
 argument-hint: '[source-name|environment|stack-name]'
 author: "Rahul Agarwal, Manish Choudhary"
 ---
 
-# Deploy CDK Pipeline
+# Deploy Pipeline Infrastructure
 
 Deploy, validate, and promote ingestion pipeline infrastructure across environments.
 Manages the full deployment lifecycle from dev through production with gate checks,
@@ -29,10 +30,22 @@ then decide whether to move forward. No silent deployments, no skipped validatio
 This skill executes **Step 13 (Deploy to Dev)**, **Step 14 (Integration Tests)**, and
 **Step 15 (Promote to Prod)** of the master onboarding workflow.
 
-**Inputs:** Generated pipeline code from Step 11 (Glue job, CDK stack, Step Functions).
+**Inputs:** Generated pipeline code from Step 11 (Glue job + IaC in user's preferred tool).
 
 **Outputs:** Deployed and verified infrastructure in the target environment with all
 resources operational.
+
+## IaC Tool Detection
+
+The deployment workflow adapts based on the user's chosen IaC tool:
+
+| Tool | Diff Command | Deploy Command | Rollback |
+|---|---|---|---|
+| AWS CDK | `cdk diff` | `cdk deploy` | CloudFormation auto-rollback |
+| Terraform | `terraform plan` | `terraform apply` | `terraform apply` with previous state |
+| CloudFormation | `aws cloudformation create-change-set` | `aws cloudformation execute-change-set` | `aws cloudformation rollback-stack` |
+
+Detect by checking which directory exists in the pipeline workspace: `cdk/`, `terraform/`, or `cloudformation/`.
 
 ## Workflow
 
@@ -40,9 +53,27 @@ resources operational.
 
 Before any deployment, verify preconditions:
 
+**CDK:**
+
 | Check | Command | Required |
 |---|---|---|
 | CDK bootstrapped | `cdk ls` (should list stacks without error) | Yes |
+| AWS credentials valid | `aws sts get-caller-identity` | Yes |
+| Pipeline code exists | Verify `src/`, `cdk/` directories present | Yes |
+| Data contract approved | Check Source Registry status = `contracted` or `active` | Yes |
+| No active deployment | Check CloudFormation stack status != `*_IN_PROGRESS` | Yes |
+
+**Terraform:**
+
+| Check | Command | Required |
+|---|---|---|
+| Terraform installed | `terraform version` | Yes |
+| Correct version | Compare output against `required_version` in `versions.tf` | Yes |
+| AWS credentials valid | `aws sts get-caller-identity` | Yes |
+| Backend initialized | `terraform init` (idempotent) | Yes |
+| Pipeline code exists | Verify `src/`, `terraform/` directories present | Yes |
+| Data contract approved | Check Source Registry status = `contracted` or `active` | Yes |
+| No active state lock | Check DynamoDB lock table | Yes |
 | AWS credentials valid | `aws sts get-caller-identity` | Yes |
 | Pipeline code exists | Verify `src/`, `cdk/`, `config/` directories present | Yes |
 | Data contract approved | Check Source Registry status = `contracted` or `active` | Yes |

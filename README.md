@@ -25,7 +25,7 @@ This Power turns Kiro into a data platform engineer that can:
 | Orchestration | AWS Step Functions + Amazon EventBridge |
 | Governance | AWS Lake Formation + Data Contracts |
 | Observability | Amazon CloudWatch + SNS |
-| Deployment | AWS CDK (Python) |
+| Deployment | AWS CDK (Python), Terraform (HCL), or CloudFormation (YAML) |
 | Query Layer | Amazon Athena |
 
 ## Supported Sources

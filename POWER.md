@@ -89,15 +89,70 @@ The agent detects the drift (2 new nullable columns), classifies it as low-sever
 
 ### Discovery Before Action
 
-Before generating any pipeline, identify the context. Ask 1-2 questions at a time:
+Before generating any pipeline, identify the context through progressive discovery. Ask 1-2 questions at a time — never a batch. Wait for the answer before asking the next question. Each answer shapes what comes next.
 
-1. **Source type** — What kind of data source? (S3 file, database, API, streaming?)
-2. **Sensitivity** — Does it contain PII, PHI, or financial data?
-3. **Schedule** — How fresh does the data need to be? (Real-time, hourly, daily?)
-4. **Volume** — Approximately how much data per batch?
-5. **Target** — Where should it land? (Existing table, new table, specific namespace?)
+**Step 1 — Source identification (ask first, always):**
+- What kind of data source are you onboarding? (S3 file drop, relational database, SaaS API, streaming?)
+- What system does it come from? (e.g., "Oracle ERP," "vendor CSV exports," "Salesforce contacts")
 
-Each answer shapes what comes next. If the user says "it has customer emails," the next question is about masking strategy, not schedule frequency.
+**Step 2 — Sensitivity and compliance (ask early, before architecture):**
+- Does this data contain PII (names, emails, phone numbers) or PHI (medical/health data)?
+- Are there any compliance requirements around this data? (GDPR, HIPAA, SOC 2, internal data governance policies?)
+- If PII/PHI detected: "Who needs to approve access to sensitive columns? Do you have a Data Steward or Privacy Officer in the loop?"
+
+**Step 3 — Infrastructure preferences (ask once, remember for the session):**
+- What's your preferred Infrastructure-as-Code tool? (AWS CDK, Terraform, or CloudFormation?)
+- If Terraform: What version? (latest stable, or a specific pinned version your org requires?)
+- What environment are you targeting? (dev, test, prod? Or all three with promotion?)
+
+**Step 4 — Pipeline specifics (ask based on what's still unknown):**
+- How fresh does the data need to be? (Real-time, hourly, daily, weekly?)
+- Approximately how much data per batch? (< 1 GB, 1-10 GB, 10-100 GB, > 100 GB?)
+- Where should it land? (Existing table, new namespace, specific S3 bucket?)
+- Is this a one-time migration or a recurring pipeline?
+
+**Trigger conditions — signals that shape subsequent questions:**
+- User mentions "PII," "customer data," "emails," "SSN" → ask about masking strategy and approval workflow
+- User mentions "Oracle," "SQL Server," "RDS" → ask about VPC connectivity and existing Glue connections
+- User mentions "daily," "hourly," "real-time" → ask about SLA tolerance and retry behavior
+- User mentions "Terraform" → ask about version pinning, state backend, and module structure preference
+- User mentions "cost," "budget" → run cost estimation before generating infrastructure
+- User mentions "existing pipeline" or "migrate" → check Source Registry for duplicates first
+
+**Interaction cadence:**
+- First turn: 1-2 discovery questions only (~80-120 words total)
+- Subsequent turns: answer their question + propose 1-2 next steps
+- After gathering enough context (typically 3-4 exchanges): offer to generate the first artifact
+- Always end every response with a clear next-step proposal — never leave the user hanging
+
+### Infrastructure-as-Code Support
+
+**Primary support (first-class, with templates and patterns):**
+- **AWS CDK (Python)** — default recommendation for greenfield projects. Full template library in `steering/cdk-infrastructure.md`.
+
+**Full support (production-ready generation):**
+- **Terraform (HCL)** — for teams with existing Terraform estates or organizational mandates. Generates modules with proper state management, variable files, and environment workspaces.
+- **AWS CloudFormation (YAML)** — for teams that prefer native AWS tooling without CDK abstraction.
+
+**IaC is the user's choice.** Do not push a specific tool. Ask once, remember for the session.
+
+**Terraform-specific requirements:**
+- Always ask for version preference: "Do you use the latest stable Terraform version, or does your organization pin to a specific version?"
+- Generate `required_version` constraint in `versions.tf` matching the user's answer
+- Generate `required_providers` block with pinned AWS provider version
+- Use workspace-based or directory-based environment separation (ask preference)
+- Generate proper backend configuration (S3 + DynamoDB state locking as default)
+- Follow HashiCorp module structure: `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf`
+- Include `.terraform.lock.hcl` guidance for reproducible builds
+
+**Terraform version handling:**
+
+| User says... | Action |
+|---|---|
+| "Use latest Terraform" | Set `required_version = ">= 1.9.0"` (or current latest stable) |
+| "We use Terraform 1.5" | Set `required_version = "~> 1.5.0"` (pessimistic constraint) |
+| "We're on 1.3 due to compliance" | Set `required_version = "~> 1.3.0"` and note any feature limitations |
+| No preference stated | Ask: "Does your org pin Terraform versions, or can we use latest stable?" |
 
 ---
 
@@ -105,14 +160,14 @@ Each answer shapes what comes next. If the user says "it has customer emails," t
 
 | Component | Technology |
 |-----------|-----------|
-| **Compute** | AWS Glue (PySpark ETL jobs, Glue 4.0) |
+| **Compute** | AWS Glue (PySpark ETL jobs, Glue 4.0+) |
 | **Storage** | Amazon S3 + Apache Iceberg (via Glue Data Catalog) |
 | **Orchestration** | AWS Step Functions + Amazon EventBridge |
 | **Metadata** | Glue Data Catalog + DynamoDB (source registry) |
 | **Governance** | AWS Lake Formation (column-level security, tagging) |
 | **Observability** | Amazon CloudWatch + SNS (metrics, alarms, alerts) |
 | **Secrets** | AWS Secrets Manager |
-| **Deployment** | AWS CDK (Python) with multi-environment CI/CD |
+| **Deployment** | AWS CDK (Python), Terraform (HCL), or CloudFormation (YAML) — user's choice |
 | **Query Layer** | Amazon Athena |
 | **Schema Inference** | Glue Crawlers + Spark-based type detection |
 
@@ -382,7 +437,7 @@ Self-Serve Portal  -->  Source Registry  -->  Connection Manager
 │       ├── metrics_emitter.py
 │       ├── quarantine_router.py
 │       └── watermark_manager.py    # (JDBC sources only)
-├── cdk/
+├── cdk/                            # Generated if IaC = CDK
 │   ├── app.py                      # CDK app entry point
 │   ├── cdk.json                    # CDK context (env-specific overrides)
 │   ├── ingestion_stack.py          # Full infrastructure stack
@@ -392,6 +447,27 @@ Self-Serve Portal  -->  Source Registry  -->  Connection Manager
 │   │   ├── eventbridge_schedule.py
 │   │   └── iam_roles.py
 │   └── requirements.txt            # CDK dependencies
+├── terraform/                      # Generated if IaC = Terraform
+│   ├── main.tf                     # Root module (Glue job, Step Functions, alarms)
+│   ├── variables.tf                # Input variables (source_name, env, schedule)
+│   ├── outputs.tf                  # Output values (ARNs, table names)
+│   ├── versions.tf                 # required_version + required_providers
+│   ├── backend.tf                  # S3 + DynamoDB state locking
+│   ├── environments/               # Per-environment variable files
+│   │   ├── dev.tfvars
+│   │   ├── test.tfvars
+│   │   └── prod.tfvars
+│   └── modules/                    # Reusable modules
+│       ├── glue_job/
+│       ├── step_function/
+│       ├── eventbridge_schedule/
+│       └── iam_roles/
+├── cloudformation/                 # Generated if IaC = CloudFormation
+│   ├── template.yaml              # Full stack template
+│   └── parameters/                # Per-environment parameter files
+│       ├── dev.json
+│       ├── test.json
+│       └── prod.json
 ├── resources/
 │   └── state_machine.json          # Step Functions definition (reference)
 ├── tests/
@@ -401,6 +477,8 @@ Self-Serve Portal  -->  Source Registry  -->  Connection Manager
 ├── sample-data/                    # Test data for validation
 └── README.md
 ```
+
+**Only one IaC directory is generated per pipeline** — based on the user's preference (asked once in Step 3 of discovery).
 
 ---
 
