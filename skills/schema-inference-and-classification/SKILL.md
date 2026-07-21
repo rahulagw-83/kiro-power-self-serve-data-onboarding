@@ -10,7 +10,7 @@ description: >-
   (use data-contract-authoring), or querying existing tables (use querying-data-lake).
 version: 1
 argument-hint: '[source-name|connection-name|s3://path]'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Schema Inference and Classification

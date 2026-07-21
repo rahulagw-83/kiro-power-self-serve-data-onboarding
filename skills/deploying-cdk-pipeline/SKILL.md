@@ -9,7 +9,7 @@ description: >-
   code (use ingesting-into-data-lake), or running queries (use querying-data-lake).
 version: 1
 argument-hint: '[source-name|environment|stack-name]'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Deploy CDK Pipeline

@@ -10,7 +10,7 @@ description: >-
   data (use querying-data-lake).
 version: 1
 argument-hint: '[source-name|domain|''all'']'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Monitor Pipeline Health

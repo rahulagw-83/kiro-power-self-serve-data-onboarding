@@ -9,7 +9,7 @@ description: >-
   suspended instead), or troubleshooting (see steering/troubleshooting.md).
 version: 1
 argument-hint: '[source-name]'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Decommission Data Source

@@ -10,7 +10,7 @@ description: >-
   data (use querying-data-lake), or deploying pipelines (use deploying-cdk-pipeline).
 version: 1
 argument-hint: '[source-name|schema-file-path]'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Data Contract Authoring

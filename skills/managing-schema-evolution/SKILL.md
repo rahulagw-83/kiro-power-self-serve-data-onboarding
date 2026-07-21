@@ -11,7 +11,7 @@ description: >-
   data-contract-authoring).
 version: 1
 argument-hint: '[source-name|table-name|''check-all'']'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Managing Schema Evolution

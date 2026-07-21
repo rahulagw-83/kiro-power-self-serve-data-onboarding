@@ -175,7 +175,7 @@ Skills are executable workflows that handle specific operational tasks interacti
 | **finding-data-lake-assets** | Steps 2, 4, 11 | Resolving table references by business name, keyword, column, or S3 path. Acts as a resolver for other skills when users provide fuzzy or business-language references. | `skills/finding-data-lake-assets/SKILL.md` |
 | **exploring-data-catalog** | Pre-onboarding | Full inventory and audit of Glue Data Catalog assets across S3 Tables, Redshift-federated, and remote Iceberg catalogs. Maps the data landscape before onboarding. | `skills/exploring-data-catalog/SKILL.md` |
 
-### Platform Custom Skills (original — authored by MANIOX)
+### Platform Custom Skills (original — authored by Rahul Agarwal, Manish Choudhary)
 
 | Skill | Onboarding Step | Use When | Location |
 |-------|----------------|----------|----------|

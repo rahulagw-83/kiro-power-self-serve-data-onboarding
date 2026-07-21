@@ -10,7 +10,7 @@ description: >-
   querying-data-lake).
 version: 1
 argument-hint: '[source-name|domain|''all''|''estimate'']'
-author: MANIOX
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Cost Estimation and Optimization
