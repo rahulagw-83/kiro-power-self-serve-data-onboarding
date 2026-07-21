@@ -1,5 +1,16 @@
 # Connection Setup
 
+> **Skill Available:** For interactive connection setup with live discovery, credential registration,
+> and two-phase testing, use the `connecting-to-data-source` skill at
+> `skills/connecting-to-data-source/SKILL.md`. The skill automates Steps 1-5 below by discovering
+> existing connections and RDS/Redshift candidates in the account, interactively registering
+> credentials (with IAM DB auth preferred), and running structured two-phase connectivity tests.
+>
+> **When to use the skill vs. this steering file:**
+> - Use the **skill** when onboarding a new source interactively (Steps 4-5 of the master workflow)
+> - Use this **steering file** as a reference for connection naming conventions, VPC requirements,
+>   environment migration, and integration with pipeline config
+
 ## When This File Is Used
 
 Use this guide when:
@@ -276,3 +287,19 @@ The pipeline generator uses `glue_connection_name` to:
 - Configure the Glue job's `--connections` argument
 - Look up VPC settings for CDK stack generation
 - Validate connectivity before first run
+
+---
+
+## Skill Cross-References
+
+For deeper guidance on specific connection topics, refer to the skill's reference files:
+
+| Topic | Skill Reference |
+|-------|-----------------|
+| JDBC URL formats and drivers | `skills/connecting-to-data-source/references/jdbc-setup.md` |
+| Snowflake native connection | `skills/connecting-to-data-source/references/snowflake-setup.md` |
+| BigQuery service account auth | `skills/connecting-to-data-source/references/bigquery-setup.md` |
+| Auto-discovering existing sources | `skills/connecting-to-data-source/references/discovery.md` |
+| IAM DB auth and Secrets Manager | `skills/connecting-to-data-source/references/credential-security.md` |
+| VPC, subnets, and S3 endpoints | `skills/connecting-to-data-source/references/network-setup.md` |
+| Structured diagnostic flow | `skills/connecting-to-data-source/references/troubleshooting.md` |
