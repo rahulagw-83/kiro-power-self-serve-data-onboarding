@@ -1,6 +1,6 @@
 # Self-Serve Data Onboarding — Kiro Power
 
-A production-grade [Kiro Power](https://kiro.dev) for building and operating self-serve data ingestion pipelines on AWS. Reduce source onboarding from 2-4 weeks to under 1 hour while maintaining production-grade quality, security, and observability.
+A production-grade [Kiro Power](https://kiro.dev/powers/) for building and operating self-serve data ingestion pipelines on AWS. Reduce source onboarding from 2-4 weeks to under 1 hour while maintaining production-grade quality, security, and observability.
 
 ## What It Does
 
