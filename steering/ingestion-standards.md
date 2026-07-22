@@ -16,7 +16,7 @@ inclusion: always
 | **Raw = governed Iceberg** | Audit columns, DQDL quality, dedup, Lake Formation tags |
 | **Glue reads from S3 only** | Never read directly from source via JDBC/API in Glue |
 | **Partitioned Landing** | `year=YYYY/month=MM/day=DD/` for time-bounded reprocessing |
-| **90-day Landing retention** | S3 lifecycle rule deletes Landing files after 90 days |
+| **Configurable Landing retention** | S3 lifecycle rule per `landing_retention_days` config (default 90 days; override per compliance) |
 | **EventBridge trigger** | New Landing files → EventBridge → Step Functions → Glue |
 
 ## 2. Mandatory Audit Columns

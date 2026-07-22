@@ -185,7 +185,7 @@ Before writing ANY file: detect workspace root from IDE context, propose path `{
 | **Landing — Streaming** | Kinesis Data Firehose (zero code) or AWS Glue Streaming ETL |
 | **Landing — File Drops** | AWS Transfer Family (SFTP/FTP/FTPS) |
 | **Landing — On-Premises** | AWS DataSync, AWS Snow Family, Mainframe Modernization |
-| **Landing Storage** | Amazon S3 (plain Parquet or source format, 90-day retention) |
+| **Landing Storage** | Amazon S3 (plain Parquet or source format, configurable retention) |
 | **Raw/Bronze Compute** | AWS Glue PySpark (reads from Landing S3 only — never from source) |
 | **Raw/Bronze Storage** | Amazon S3 + Apache Iceberg (ACID, time-travel, schema evolution) |
 | **Data Quality** | AWS Glue Data Quality (DQDL rules, compiled from data contracts) |
@@ -509,7 +509,7 @@ LANDING LAYER
   Storage  : Plain S3 (Parquet or source format) — NO Iceberg
   Content  : Exact copy of source — no transforms, no validation, no masking
   Partition: year/month/day of arrival
-  Retention: 90 days (reprocessing buffer)
+  Retention: configurable per project (default 90 days; override for regulated industries)
   Trigger  : S3 Event Notification → EventBridge → Glue Raw job
 
 RAW (BRONZE) LAYER

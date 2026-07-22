@@ -22,7 +22,7 @@ Source System
      ▼  (DMS / AppFlow / Firehose / Transfer Family / DataSync)
 ┌──────────────────────────────────────────────┐
 │  LANDING LAYER — Plain S3, no transforms     │
-│  Partition: year/month/day | Retention: 90d  │
+│  Partition: year/month/day | Retention: configurable  │
 └──────────────────────────────────────────────┘
      │  S3 Event → EventBridge → Glue
      ▼

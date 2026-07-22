@@ -158,7 +158,7 @@ Based on user's IaC choice (CDK / Terraform / CloudFormation), generate:
 - EventBridge rule (Landing → Raw trigger)
 - IAM roles (least privilege)
 - CloudWatch alarms (failure, freshness SLA, quarantine rate)
-- S3 lifecycle rule (Landing 90-day expiration)
+- S3 lifecycle rule (Landing retention per `landing_retention_days` config)
 
 ---
 

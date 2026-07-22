@@ -28,7 +28,7 @@ Source System
 │                                                     │
 │  Format: Parquet (preferred) or source-native       │
 │  No Iceberg. No transforms. No audit columns.      │
-│  Retention: 90 days.                                │
+│  Retention: per project policy (default 90 days).   │
 └────────────────────────────────────────────────────┘
      │
      ▼  S3 Event → EventBridge → Step Functions → Glue job
@@ -50,7 +50,7 @@ Source System
 | **No Iceberg** | Plain S3 for simplicity and cost; Iceberg overhead not needed here |
 | **Source format or Parquet** | If ingestion service supports Parquet output (AppFlow, Firehose, DMS), prefer it. Otherwise, land in source format (CSV, JSON). |
 | **Partition by arrival date** | `year=YYYY/month=MM/day=DD/` enables time-bounded reprocessing |
-| **90-day retention** | Enough buffer to reprocess failures without re-extracting from source |
+| **Configurable retention** | Default 90 days; override via `onboarding-request.yaml` field `landing_retention_days`. Regulated industries (healthcare: 7 years, finance: 5 years, GDPR: minimize) should set per compliance requirements. |
 | **Never read by analysts** | Landing is internal to the platform; users query Raw layer only |
 | **Triggers Raw pipeline** | New files in Landing trigger EventBridge → Step Functions → Glue |
 
@@ -162,9 +162,31 @@ EventBridge rule → Step Functions state machine → Glue job (reads Landing S3
 
 ## Retention Policy
 
+Landing retention is **configurable per source** via the `landing_retention_days` field in `onboarding-request.yaml`. The power asks about retention during Q7 (sensitivity) if compliance requirements are detected.
+
+**Industry defaults (ask the user, do not assume):**
+
+| Industry / Regulation | Typical Landing Retention | Rationale |
+|---|---|---|
+| Unregulated / general | 90 days | Reprocessing buffer without cost bloat |
+| Financial services (SOX, GLBA) | 7 years (2555 days) | Regulatory audit requirements |
+| Healthcare (HIPAA) | 6-7 years (2190-2555 days) | Medical record retention rules |
+| GDPR (EU) | Minimize (30-90 days) | Data minimization principle — keep only as long as needed |
+| Insurance | 7-10 years | Claims and policy retention requirements |
+| Government / public sector | Per agency mandate | Varies by jurisdiction and data classification |
+| Startups / non-regulated | 30-90 days | Cost efficiency, no compliance mandate |
+
+**Configuration in onboarding-request.yaml:**
+```yaml
+retention:
+  landing_retention_days: 90     # override per compliance requirements
+  raw_retention_days: 2555       # 7 years default for Raw/Bronze
+  quarantine_retention_days: 90  # how long to keep quarantined rows
+```
+
 | Configuration | Value |
 |---|---|
-| S3 Lifecycle Rule | Delete objects after 90 days |
+| S3 Lifecycle Rule | Delete objects after `landing_retention_days` (default: 90) |
 | Glacier transition | Not recommended (reprocessing needs fast access) |
 | Versioning | Disabled (Landing is append-only) |
 | Encryption | SSE-S3 (no per-source KMS needed for Landing — PII protection is applied in Raw via Lake Formation) |
@@ -190,7 +212,7 @@ EventBridge rule → Step Functions state machine → Glue job (reads Landing S3
 | Security group complexity | Only DMS/AppFlow need VPC access; Glue needs S3 only |
 | Cold-start delays | S3 reads start instantly, no connection negotiation |
 | Source system load | Extraction happens via purpose-built service (DMS), not Spark |
-| Reprocessing requires re-extraction | Landing is a 90-day buffer — reprocess from S3 |
+| Reprocessing requires re-extraction | Landing is a retention-period buffer — reprocess from S3 |
 | Worker count driven by source latency | S3 reads are 2× faster → 50% fewer workers needed |
 
 ---
@@ -200,7 +222,7 @@ EventBridge rule → Step Functions state machine → Glue job (reads Landing S3
 - MUST NOT apply any business transforms in Landing
 - MUST NOT use Iceberg in Landing (plain S3 only)
 - MUST partition by arrival date (year/month/day)
-- MUST set 90-day lifecycle expiration
+- MUST set lifecycle expiration per `landing_retention_days` in onboarding-request.yaml (default 90 days if not specified; override for regulated industries)
 - MUST trigger Raw pipeline via EventBridge on new file arrival
 - MUST NOT expose Landing to end users or analysts
 - MUST use Parquet format when the ingestion service supports it
