@@ -1,23 +1,24 @@
 ---
 name: monitoring-pipeline-health
 description: >-
-  Proactively monitor pipeline health across all active sources. Checks freshness
-  SLAs, error rates, cost trends, and alarm states. Triggers self-healing actions
-  for known failure patterns. Triggers on: check pipeline health, are pipelines
-  healthy, SLA status, pipeline dashboard, which pipelines are failing, freshness
-  check, health report. Do NOT use for deploying pipelines (use deploying-cdk-pipeline),
-  troubleshooting specific failures (see steering/troubleshooting.md), or querying
-  data (use querying-data-lake).
-version: 1
+  Proactively monitor pipeline health across all active sources. Checks both Landing
+  layer services (DMS tasks, AppFlow flows, Firehose streams) and Raw layer pipelines
+  (Glue jobs, DQDL quality results). Detects freshness breaches, DQDL failures,
+  error taxonomy matches, cost anomalies. Triggers auto-remediation from error taxonomy.
+  Triggers on: check pipeline health, are pipelines healthy, SLA status, pipeline
+  dashboard, which pipelines are failing, freshness check, health report.
+  Do NOT use for deploying (use deploying-cdk-pipeline), or querying (use querying-data-lake).
+version: 2
 argument-hint: '[source-name|domain|''all'']'
 author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Monitor Pipeline Health
 
-Proactively assess the health of all active ingestion pipelines. Checks freshness SLAs,
-quarantine rates, execution trends, alarm states, and cost metrics. Identifies pipelines
-at risk before they fail and triggers self-healing where applicable.
+Proactively assess the health of all active ingestion pipelines. Monitors both the
+Landing layer (DMS replication status, AppFlow flow runs, Firehose delivery health)
+and the Raw layer (Glue job success/failure, DQDL quality scores, quarantine rates).
+Uses the error taxonomy from `steering/troubleshooting.md` to auto-remediate known failures.
 
 ## Philosophy
 

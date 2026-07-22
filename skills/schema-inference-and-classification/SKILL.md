@@ -2,14 +2,14 @@
 name: schema-inference-and-classification
 description: >-
   Automatically detect schema structure, data types, nullability, and sensitivity
-  classification from source data samples. Supports S3 files (CSV, JSON, Parquet),
-  JDBC tables, and API responses. Produces a versioned schema document with PII/PHI
-  tags ready for data contract authoring. Triggers on: infer schema, detect columns,
-  classify data, find PII, schema discovery, sample source, what columns does it have.
+  classification from source data samples. Samples from Landing S3 (preferred) or
+  directly from source. Produces a versioned schema document with PII/PHI tags that
+  drives data contract authoring and DQDL rule compilation. Triggers on: infer schema,
+  detect columns, classify data, find PII, schema discovery, sample source, what columns.
   Do NOT use for creating tables (use creating-data-lake-table), writing contracts
   (use data-contract-authoring), or querying existing tables (use querying-data-lake).
-version: 1
-argument-hint: '[source-name|connection-name|s3://path]'
+version: 2
+argument-hint: '[source-name|s3://landing-path|connection-name]'
 author: "Rahul Agarwal, Manish Choudhary"
 ---
 
@@ -18,7 +18,12 @@ author: "Rahul Agarwal, Manish Choudhary"
 Automatically sample a data source, detect its schema, infer canonical types, assess
 nullability and cardinality, and classify each column for sensitivity (public, internal,
 restricted, PHI). The output is a versioned schema document that feeds directly into
-data contract authoring.
+data contract authoring and DQDL rule compilation.
+
+**Two-layer context:** Prefer sampling from Landing S3 files (if already available from
+an initial DMS/AppFlow/Firehose load). If Landing is not yet populated, sample directly
+from the source. PII/PHI columns are tagged in Lake Formation at the Raw layer — they
+are NOT masked here (masking belongs in Silver).
 
 ## Philosophy
 

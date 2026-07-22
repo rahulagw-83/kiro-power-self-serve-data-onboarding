@@ -1,34 +1,135 @@
 ---
 name: ingesting-into-data-lake
 description: >-
-  Import data into the AWS data lake from S3 files, local uploads, JDBC databases
-  (Oracle, SQL Server, PostgreSQL, MySQL, RDS, Aurora), Amazon Redshift, Snowflake,
-  BigQuery, DynamoDB, or existing Glue catalog tables (migration). Default target
-  is S3 Tables; standard Iceberg on a general purpose bucket is supported where S3
-  Tables is not adopted. Handles one-time loads, recurring pipelines, migrations.
-  Triggers on: import data, load data, ingest, sync database, migrate table, move
-  data to AWS, set up pipeline, ETL, pull from Snowflake, query BigQuery into S3,
-  export DynamoDB, CTAS, convert to Iceberg. Do NOT use for setting up or troubleshooting
-  Glue connections (use connecting-to-data-source), creating empty tables (use
-  creating-data-lake-table), running queries (use querying-data-lake), finding tables
-  by fuzzy name (use finding-data-lake-assets), catalog audit (use exploring-data-catalog),
-  or SaaS platforms like Salesforce, ServiceNow, SAP, MongoDB, Kafka.
-version: 1
-argument-hint: '[source-path|connection-name|table-name] [--target s3-tables|iceberg|parquet]'
+  Move data into the data lake using the right AWS service per source type. Provisions
+  Landing layer (DMS for databases, AppFlow for SaaS, Firehose for streaming, Transfer
+  Family for SFTP, DataSync for on-prem) and generates Glue ETL jobs that read from
+  Landing S3 only — never directly from the source. Implements the two-layer Landing+Raw
+  architecture with DQDL quality rules, intelligent worker sizing, and pre-deployment
+  validation. Triggers on: import data, load data, ingest, sync database, migrate table,
+  set up pipeline, ETL, replicate, CDC, onboard source.
+  Do NOT use for creating Glue connections (use connecting-to-data-source), creating
+  empty tables (use creating-data-lake-table), running queries (use querying-data-lake).
+version: 2
+argument-hint: '[source-type|source-name|connection-name] [--tool dms|appflow|firehose|glue]'
+author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Ingest into Data Lake
 
-Move data from a source into a queryable table in the data lake. This skill assumes the source connection (if one is needed) already exists. For Glue connection setup or troubleshooting, delegate to `connecting-to-data-source`.
+Move data from a source into the data lake using the right AWS service. This skill
+implements the two-layer architecture: provision the Landing layer ingestion service,
+then generate a Glue ETL job that reads from Landing S3 to promote data to Raw/Bronze Iceberg.
 
 ## Philosophy
 
-**Default to S3 Tables unless the environment says otherwise.** S3 Tables is the recommended target for new data lake work. If the user's catalog inventory shows they haven't adopted S3 Tables, recommend standard Iceberg on their existing general-purpose bucket instead of forcing them to change posture.
+**Right tool per source. Glue reads from S3 only.**
+
+- Databases → AWS DMS (CDC or full load) → S3 Landing → Glue Raw
+- SaaS → Amazon AppFlow → S3 Landing → Glue Raw
+- Streaming → Kinesis Firehose → S3 Landing → Glue Raw
+- SFTP files → Transfer Family → S3 Landing → Glue Raw
+- On-prem → DataSync → S3 Landing → Glue Raw
+- S3 files (already landed) → EventBridge → Glue Raw directly
+
+**Never default to Glue JDBC for database sources.** DMS is purpose-built and 4× cheaper.
 
 ## Integration with Self-Serve Data Onboarding
 
-This skill handles **Steps 11-12** of the master onboarding workflow defined in `steering/onboarding-workflow.md`:
-- Step 11: Generate Pipeline Code (Glue ETL job execution)
+This skill handles **Steps 7-9** of the master onboarding workflow:
+- Step 7: Provision Landing ingestion service (DMS/AppFlow/Firehose/Transfer Family)
+- Step 8: Configure Landing → Raw EventBridge trigger
+- Step 9: Generate Glue ETL job (reads from Landing S3, writes to Raw Iceberg)
+
+## Workflow
+
+### 1. Confirm Source Tool (from discovery)
+
+By this point, Q1-Q7 discovery is complete and the user has confirmed the tool via cost comparison. Use the selected tool:
+
+| Confirmed Tool | Action |
+|---|---|
+| AWS DMS | Provision replication instance + task → S3 Parquet Landing |
+| Amazon AppFlow | Create connector profile + flow → S3 Parquet Landing |
+| Kinesis Firehose | Create delivery stream (JSON→Parquet) → S3 Landing |
+| Transfer Family | Create SFTP server + S3 mapping → S3 Landing |
+| DataSync | Create task (on-prem → S3 Landing) |
+| Aurora S3 Export | Configure export task → S3 Parquet Landing |
+| Glue (S3 already landed) | Skip Landing provisioning — files already in S3 |
+
+### 2. Pre-Deployment Validation
+
+Run ALL checks from `steering/pre-deployment-validation.md` before generating code:
+- Connectivity, credentials, networking, IAM, ASL, worker type
+- MUST PASS before proceeding
+
+### 3. Provision Landing Layer
+
+Configure the selected ingestion service to deliver data to:
+```
+s3://{bucket}/landing/{source_name}/{table_name}/year=YYYY/month=MM/day=DD/
+```
+
+Format: Parquet (when service supports it), otherwise source-native.
+See `steering/landing-layer.md` for service-specific configurations.
+
+### 4. Configure EventBridge Trigger
+
+Set up S3 event → EventBridge → Step Functions to trigger the Raw pipeline when new Landing files arrive.
+
+### 5. Generate Glue Raw Job
+
+Generate PySpark Glue job that:
+1. Reads from Landing S3 path (Parquet or source format)
+2. Adds audit columns: `_ingested_at`, `_source_file`, `_batch_id`, `_row_hash`, `_ingested_date`
+3. Runs DQDL quality rules (compiled from data contract)
+4. Routes failures to `{table}_quarantine` Iceberg table
+5. Deduplicates via `_row_hash` (within-batch) and merge key (cross-batch)
+6. Writes pass rows to Raw Iceberg table
+7. Emits CloudWatch metrics
+
+**Key:** The Glue job reads S3 files. It never reads from the source system via JDBC/API.
+
+### 6. Intelligent Worker Sizing
+
+Apply sizing from `steering/ingestion-standards.md`:
+- Volume < 1 GB → G.1X, 2 workers, 15 min timeout
+- Volume 1-10 GB → G.1X, 5 workers, 30 min timeout
+- Volume 10-50 GB → G.1X, 10 workers, 60 min timeout
+- Volume > 50 GB → G.2X, 10 workers, 120 min timeout
+- SLA > 2 hours → use Flex execution class (35% cheaper)
+- S3-sourced jobs need 50% fewer workers than JDBC
+
+### 7. Validate and Test
+
+After deploying:
+1. Trigger Landing ingestion (initial load)
+2. Verify files in `s3://{bucket}/landing/{source}/`
+3. Verify EventBridge triggers Raw pipeline
+4. Verify data in Raw Iceberg table via Athena
+5. Verify DQDL results in Glue Console
+6. Verify CloudWatch metrics emitted
+
+## Gotchas
+
+- S3 Tables requires Glue 5.1+ and `--datalake-formats iceberg`
+- All `spark.sql.catalog.*` config MUST go in `--conf` args, never `spark.conf.set()`
+- G.025X is ONLY valid for `gluestreaming` — auto-correct to G.1X for `glueetl`
+- DMS S3 target uses date-partitioned folders natively — align with Landing convention
+- AppFlow Parquet output requires explicit `prefixConfig` for date partitioning
+- Firehose uses `!{timestamp:yyyy}` dynamic partitioning syntax
+- DynamoDB does not need DMS or Glue connection — use native S3 Export
+
+## Troubleshooting
+
+| Error | Cause | Action |
+|---|---|---|
+| DMS task ERROR state | Source connectivity or grants | Check DMS endpoint, source permissions |
+| AppFlow CONNECTOR_RUNTIME_ERROR | OAuth expired | Refresh connector profile |
+| Firehose SUSPENDED | S3 delivery failures | Check bucket permissions, resume stream |
+| Glue timeout | Volume larger than sized | Increase workers or timeout |
+| DQDL quarantine > 5% | Data quality issue | Inspect quarantine table, check source |
+| No files in Landing | Ingestion service not running | Check DMS/AppFlow/Firehose status |
 - Step 12: Run Smoke Test in Dev (validate with limited data)
 
 It also powers the runtime execution of generated pipelines. The pipeline generator (`steering/pipeline-generation.md`) produces config-driven code; this skill executes it.

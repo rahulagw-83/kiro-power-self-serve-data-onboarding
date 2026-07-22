@@ -1,8 +1,8 @@
 ---
 name: "self-serve-data-onboarding"
 displayName: "Self-Serve Data Onboarding"
-description: "Build and operate self-serve data ingestion pipelines on AWS. Onboard sources (S3, JDBC, SaaS, streaming), infer schemas, generate data contracts, and auto-generate production-grade Glue ETL jobs with CDK infrastructure, observability, and governance built in."
-keywords: ["data ingestion", "aws glue", "etl", "data pipeline", "iceberg", "s3", "jdbc", "cdk", "data contract", "schema inference", "self-serve", "data lake"]
+description: "Build and operate self-serve data ingestion pipelines on AWS. Onboard sources (databases via DMS, SaaS via AppFlow, streaming via Firehose, file drops via Transfer Family, on-prem via DataSync) using a two-layer Landing+Raw architecture, Glue Data Quality (DQDL), and your IaC tool of choice."
+keywords: ["data ingestion", "aws glue", "aws dms", "appflow", "kinesis firehose", "transfer family", "datasync", "aurora zero-etl", "glue data quality", "dqdl", "etl", "data pipeline", "iceberg", "s3", "jdbc", "cdk", "terraform", "data contract", "schema inference", "self-serve", "data lake", "landing zone", "bronze"]
 well_architected: true
 author: "Rahul Agarwal, Manish Choudhary"
 ---
@@ -18,11 +18,12 @@ This power is the **complete, production-grade platform** for building and opera
 **What it delivers:**
 
 1. Accept a data-source onboarding request from any team member (analyst, data scientist, product owner).
-2. Test connectivity and infer schema automatically — detecting types, nullability, and sensitive fields.
-3. Generate a machine-readable data contract (schema, quality rules, SLAs, evolution policies).
-4. Auto-generate production-grade pipeline code (Glue ETL jobs, CDK infrastructure, Step Functions orchestration).
-5. Deploy with observability, alerting, and error-quarantine built in.
-6. Handle schema evolution, drift detection, and self-healing gracefully over time.
+2. Recommend the right AWS ingestion service per source type — DMS for databases, AppFlow for SaaS, Firehose for streaming, Transfer Family for file drops. Only use Glue JDBC when transforms are genuinely needed.
+3. Implement a two-layer architecture: Landing (fast, cheap, raw copy) → Raw/Bronze (trusted, governed, Iceberg).
+4. Run mandatory pre-deployment validation — connectivity, credentials, networking, IAM, and ASL checks — before generating or deploying anything.
+5. Compile data contract quality rules to DQDL (AWS Glue Data Quality) — no custom validator code to maintain.
+6. Generate IaC (CDK, Terraform, or CloudFormation) with intelligent worker sizing and cost estimates shown upfront.
+7. Deploy with observability, error taxonomy with auto-remediation, and self-healing built in.
 
 **The goal:** Reduce source onboarding from 2-4 weeks to under 1 hour while maintaining production-grade quality, security, and observability.
 
@@ -30,11 +31,11 @@ This power is the **complete, production-grade platform** for building and opera
 
 ## Onboarding
 
-**What this power does:** Helps you build and operate self-serve data ingestion pipelines on AWS — from source discovery through production deployment and ongoing operations. It generates production-grade Glue ETL jobs, CDK infrastructure, data contracts, and observability configuration from YAML configs. It covers the full lifecycle: connect, infer, contract, generate, deploy, monitor, evolve, and retire.
+**What this power does:** Helps you build and operate self-serve data ingestion pipelines on AWS — from source discovery through production deployment and ongoing operations. It selects the right AWS ingestion service per source type, implements a Landing+Raw two-layer architecture, enforces quality via DQDL rules, and runs mandatory pre-deployment validation before generating or deploying anything.
 
-**What this power does NOT do:** Provide legal advice on data privacy regulations, replace a qualified Data Protection Officer, or guarantee regulatory compliance. Always verify data classification decisions (especially PII/PHI sensitivity tagging) with your organization's privacy and legal teams. The sensitivity patterns in `schema-inference-and-classification` are heuristic-based — they catch common patterns but are not exhaustive.
+**What this power does NOT do:** Provide legal advice on data privacy regulations, replace a qualified Data Protection Officer, or guarantee regulatory compliance. PII/PHI classification is heuristic-based — validate with your privacy team. Silver/Gold layer transforms (masking, joins, business logic) are out of scope — this power handles Landing and Raw only.
 
-**Scope:** This power targets AWS-native data lake architectures using Glue, S3/Iceberg, Athena, Step Functions, and CDK. It does not cover non-AWS platforms, real-time streaming analytics (beyond Glue Streaming ETL), or ML/AI model training pipelines.
+**Scope:** AWS-native data lake architectures. Does not cover ML/AI model training pipelines, Silver/Gold layer transforms, or non-AWS platforms.
 
 ---
 
@@ -43,13 +44,13 @@ This power is the **complete, production-grade platform** for building and opera
 Describe what you need. No jargon required — the power will ask clarifying questions and guide you through the appropriate workflow.
 
 Examples:
-- "Onboard our PostgreSQL orders database into the data lake"
-- "Connect to our Snowflake analytics warehouse"
-- "What does the schema of our vendor CSV files look like?"
-- "Generate a data contract for the customer_events table"
-- "Deploy the orders pipeline to production"
+- "Onboard our Aurora MySQL orders database into the data lake"
+- "Set up daily Salesforce contacts sync"
+- "We get vendor CSV files via SFTP — automate the ingestion"
+- "Stream Kafka events into S3"
+- "Migrate our on-premises Oracle tables to the data lake"
 - "Check if our pipelines are healthy"
-- "What would it cost to ingest 50 GB daily from Oracle?"
+- "What would it cost to replicate 5 Aurora tables with CDC?"
 - "The orders pipeline has schema drift — help me handle it"
 - "Retire the legacy_reports source"
 
@@ -57,21 +58,21 @@ Examples:
 
 ## Example Journeys
 
-**"Onboard our PostgreSQL orders database into the data lake"**
+**"Onboard our Aurora MySQL orders database"**
 
-The agent asks about the database endpoint, table name, incremental column, and schedule frequency. It discovers existing Glue connections in your account, tests connectivity with a two-phase check, samples 5000 rows to infer schema and classify sensitivity, generates a data contract with quality rules, produces a Glue ETL job + CDK stack, deploys to dev, runs a smoke test, and promotes through test to prod. You walk away with a production pipeline running on schedule with CloudWatch alerting and a versioned data contract.
+The agent asks: Q1 (database → Aurora MySQL) → Q2 (CDC or snapshots?) → Q3 (transforms needed at ingestion?). Shows a cost comparison: DMS CDC ~$45/mo vs Glue JDBC ~$180/mo vs Aurora S3 Export ~$8/mo (no CDC). User picks DMS. Agent runs pre-deployment validation (VPC, SG self-reference, IAM), provisions DMS replication instance + S3 target (Landing layer), then creates a lightweight Glue job to promote Landing → Raw/Bronze Iceberg with DQDL quality rules. Deploys CDK stack, runs smoke test, promotes to prod.
 
-**"We're getting a new vendor CSV drop daily in S3 — set it up"**
+**"Set up daily Salesforce contacts sync"**
 
-The agent asks about the S3 bucket/prefix, file format, delimiter, and whether headers exist. It reads a sample file, infers the schema, classifies any PII columns, generates a contract with volume bounds and freshness SLA, produces an incremental pipeline using Glue bookmarks, and deploys with EventBridge scheduling. Total time: under 30 minutes.
+Agent identifies: SaaS → AppFlow has a native Salesforce connector. No Glue connection needed, no JDBC, no VPC complexity. Provisions AppFlow flow (Salesforce → S3 Landing, Parquet, daily schedule), Glue job promotes Landing → Raw Iceberg with sensitivity tagging. Total cost: ~$15/month vs ~$200/month for custom REST+Glue.
 
-**"Our pipelines have been slow lately — what's going on?"**
+**"We get vendor CSV files daily via SFTP"**
 
-The agent runs a health check across all active pipelines. It reports freshness SLA status, identifies two pipelines with duration spikes (data volume grew 3x), recommends right-sizing workers from G.1X to G.2X for one and switching to daily schedule for another, and estimates $45/month savings from the optimization.
+Agent identifies: file drops + SFTP → Transfer Family. Provisions SFTP server with S3 storage backend, EventBridge rule on S3 PutObject triggers Glue job. Schema inferred from first file drop. DQDL rules generated from contract. Under 45 minutes end-to-end.
 
-**"The customer table added new columns — handle the drift"**
+**"Stream Kinesis events into the data lake"**
 
-The agent detects the drift (2 new nullable columns), classifies it as low-severity additive change, checks the contract's evolution policy (additive_auto), auto-applies the ALTER TABLE to both the main and quarantine Iceberg tables, bumps the contract from v1.2.0 to v1.3.0, and notifies registered consumers.
+Agent identifies: streaming + no transforms → Kinesis Data Firehose. Zero Glue code for Landing. Firehose converts JSON→Parquet natively and delivers to S3 Landing partitioned by arrival time. Scheduled Glue job promotes Landing → Raw Iceberg with DQDL quality rules. Cost: ~$8/month vs ~$180/month for Glue Streaming.
 
 ---
 
@@ -87,43 +88,62 @@ The agent detects the drift (2 new nullable columns), classifies it as low-sever
 - Don't expose internal plumbing. Users don't need to know which steering files or skills are loading.
 - Don't preview hypothetical scenarios. Ask the question, wait for the answer.
 
-### Discovery Before Action
+### Discovery Before Action — 7 Questions Before Recommending Architecture
 
-Before generating any pipeline, identify the context through progressive discovery. Ask 1-2 questions at a time — never a batch. Wait for the answer before asking the next question. Each answer shapes what comes next.
+Ask 1-2 questions per turn. Wait for the answer. Each answer shapes what comes next.
 
-**Step 1 — Source identification (ask first, always):**
-- What kind of data source are you onboarding? (S3 file drop, relational database, SaaS API, streaming?)
-- What system does it come from? (e.g., "Oracle ERP," "vendor CSV exports," "Salesforce contacts")
+**Q1 — Source type (ask first, always):**
+- What kind of source? (database / SaaS platform / file drops / streaming / on-premises)
+- What specific system? (Aurora MySQL, Salesforce, vendor SFTP files, Kafka on MSK…)
 
-**Step 2 — Sensitivity and compliance (ask early, before architecture):**
-- Does this data contain PII (names, emails, phone numbers) or PHI (medical/health data)?
-- Are there any compliance requirements around this data? (GDPR, HIPAA, SOC 2, internal data governance policies?)
-- If PII/PHI detected: "Who needs to approve access to sensitive columns? Do you have a Data Steward or Privacy Officer in the loop?"
+**Q2 — Sync pattern:**
+- Do you need ongoing sync (CDC — capture every change) or periodic snapshots (e.g., nightly full extract)?
 
-**Step 3 — Infrastructure preferences (ask once, remember for the session):**
-- What's your preferred Infrastructure-as-Code tool? (AWS CDK, Terraform, or CloudFormation?)
-- If Terraform: What version? (latest stable, or a specific pinned version your org requires?)
-- What environment are you targeting? (dev, test, prod? Or all three with promotion?)
+**Q3 — Transform requirement (determines architecture):**
+- Do you need transforms, quality validation, or masking AT ingestion time?
+- → No = use the simplest ingestion service, Landing layer only
+- → Yes = Landing + Raw two-layer pattern (ingestion service → S3 → Glue from S3)
 
-**Step 4 — Pipeline specifics (ask based on what's still unknown):**
-- How fresh does the data need to be? (Real-time, hourly, daily, weekly?)
-- Approximately how much data per batch? (< 1 GB, 1-10 GB, 10-100 GB, > 100 GB?)
-- Where should it land? (Existing table, new namespace, specific S3 bucket?)
+**Q4 — Freshness SLA:**
+- How fresh does the data need to be? (real-time / sub-minute / hourly / daily / weekly)
+
+**Q5 — Data volume:**
+- Approximately how much data per batch or per day? (< 1 GB / 1-10 GB / 10-100 GB / > 100 GB)
+
+**Q6 — Migration vs recurring:**
 - Is this a one-time migration or a recurring pipeline?
 
-**Trigger conditions — signals that shape subsequent questions:**
-- User mentions "PII," "customer data," "emails," "SSN" → ask about masking strategy and approval workflow
-- User mentions "Oracle," "SQL Server," "RDS" → ask about VPC connectivity and existing Glue connections
-- User mentions "daily," "hourly," "real-time" → ask about SLA tolerance and retry behavior
-- User mentions "Terraform" → ask about version pinning, state backend, and module structure preference
-- User mentions "cost," "budget" → run cost estimation before generating infrastructure
-- User mentions "existing pipeline" or "migrate" → check Source Registry for duplicates first
+**Q7 — Sensitivity:**
+- Does this data contain PII (names, emails, SSNs) or PHI (health/medical data)?
+- Any compliance requirements? (GDPR, HIPAA, SOC 2, internal governance)
+
+**After Q1-Q7, BEFORE collecting technical details:**
+Show a cost comparison table for applicable services and ask the user to confirm. Only then collect connection details for the chosen service.
+
+**Trigger conditions — signals that shape questions and recommendations:**
+- "CDC", "replication", "changes only" → recommend DMS
+- "Salesforce", "SAP", "ServiceNow", "HubSpot", "Zendesk", "Workday" → recommend AppFlow
+- "Kinesis", "Kafka", "MSK", "events", "streaming" → recommend Firehose (no transforms) or Glue Streaming
+- "SFTP", "FTP", "file drop", "partner files" → recommend Transfer Family
+- "on-prem", "NFS", "SMB", "HDFS", "file share" → recommend DataSync
+- "mainframe", "VSAM", "DB2", "IMS" → recommend Mainframe Modernization
+- "share data", "cross-account", "no movement" → recommend Lake Formation sharing
+- "Aurora" + "Redshift" → ask about Aurora Zero-ETL integration
+- "Aurora" + "snapshot" → ask about Aurora native S3 Export
+- "cost", "budget", "expensive" → show cost comparison before any recommendation
+- "PII", "customer data", "emails", "SSN" → ask about masking strategy and approval
+- "Terraform" → ask version pinning, state backend, module structure
+
+**Workspace-aware file generation:**
+Before writing ANY file: detect workspace root from IDE context, propose path `{workspace_root}/{source-name}-ingestion-pipeline/`, confirm with user. Never write to home directory.
 
 **Interaction cadence:**
-- First turn: 1-2 discovery questions only (~80-120 words total)
-- Subsequent turns: answer their question + propose 1-2 next steps
-- After gathering enough context (typically 3-4 exchanges): offer to generate the first artifact
-- Always end every response with a clear next-step proposal — never leave the user hanging
+- Turn 1: Q1 only (~80-120 words)
+- Turns 2-4: Q2 → Q7, 1-2 per turn
+- After Q7: show cost comparison, confirm approach
+- After confirmation: collect technical details (endpoint, credentials, VPC)
+- After technical details: run pre-deployment validation
+- After validation passes: generate infrastructure and deploy
 
 ### Infrastructure-as-Code Support
 
@@ -160,32 +180,47 @@ Before generating any pipeline, identify the context through progressive discove
 
 | Component | Technology |
 |-----------|-----------|
-| **Compute** | AWS Glue (PySpark ETL jobs, Glue 4.0+) |
-| **Storage** | Amazon S3 + Apache Iceberg (via Glue Data Catalog) |
+| **Landing — Databases** | AWS DMS (CDC + full load), Aurora Zero-ETL, Aurora S3 Export |
+| **Landing — SaaS** | Amazon AppFlow (50+ native connectors) |
+| **Landing — Streaming** | Kinesis Data Firehose (zero code) or AWS Glue Streaming ETL |
+| **Landing — File Drops** | AWS Transfer Family (SFTP/FTP/FTPS) |
+| **Landing — On-Premises** | AWS DataSync, AWS Snow Family, Mainframe Modernization |
+| **Landing Storage** | Amazon S3 (plain Parquet or source format, 90-day retention) |
+| **Raw/Bronze Compute** | AWS Glue PySpark (reads from Landing S3 only — never from source) |
+| **Raw/Bronze Storage** | Amazon S3 + Apache Iceberg (ACID, time-travel, schema evolution) |
+| **Data Quality** | AWS Glue Data Quality (DQDL rules, compiled from data contracts) |
 | **Orchestration** | AWS Step Functions + Amazon EventBridge |
-| **Metadata** | Glue Data Catalog + DynamoDB (source registry) |
-| **Governance** | AWS Lake Formation (column-level security, tagging) |
-| **Observability** | Amazon CloudWatch + SNS (metrics, alarms, alerts) |
+| **Metadata / Registry** | Glue Data Catalog + DynamoDB (source registry) |
+| **Governance** | AWS Lake Formation (column-level tagging, cross-account sharing) |
+| **Observability** | Amazon CloudWatch + SNS (metrics, alarms, dashboards) |
 | **Secrets** | AWS Secrets Manager |
-| **Deployment** | AWS CDK (Python), Terraform (HCL), or CloudFormation (YAML) — user's choice |
+| **Deployment** | AWS CDK (Python), Terraform (HCL), or CloudFormation (YAML) |
 | **Query Layer** | Amazon Athena |
-| **Schema Inference** | Glue Crawlers + Spark-based type detection |
+| **Data Sharing** | Lake Formation cross-account, AWS Data Exchange, Redshift Data Sharing |
 
 ---
 
-## Supported Source Types
+## Supported Source Types and Recommended Tools
 
-| Source Type | Connector | Method | Template |
-|-------------|-----------|--------|----------|
-| S3 Files (CSV, JSON, Parquet) | S3 + Glue Bookmark | Incremental file discovery | `s3_incremental_template` |
-| Relational DB (PostgreSQL, MySQL, Oracle, SQL Server) | JDBC + Glue Connection | Watermark-based incremental, MERGE INTO | `jdbc_ingestion_template` |
-| Amazon RDS / Aurora | JDBC via VPC | Same as above + VPC networking | `jdbc_ingestion_template` |
-| SaaS (Salesforce, HubSpot, Workday, SAP) | REST API + SDK | Paginated fetch, OAuth refresh | `api_ingestion_template` |
-| Cloud Storage (ADLS, GCS) | S3-compatible adapter | Event-driven + Crawler | `s3_incremental_template` |
-| Streaming (Kafka, Kinesis) | Glue Streaming ETL | Continuous micro-batch, checkpointing | `streaming_template` |
-| Amazon DynamoDB | Direct read | Full/incremental export | Custom |
-| Snowflake | SNOWFLAKE connection type | Glue native connector | Custom |
-| BigQuery | BIGQUERY connection type | Cross-cloud adapter | Custom |
+| Source | CDC? | Transforms? | Recommended Service | Notes |
+|---|---|---|---|---|
+| Aurora MySQL/PostgreSQL → Redshift | Yes | No | **Aurora Zero-ETL** | Native, sub-minute latency, zero cost |
+| Aurora (snapshot to S3) | No | No | **Aurora S3 Export** | ~$8/month, no CDC |
+| RDS / Aurora / MySQL / PostgreSQL / Oracle / SQL Server | Yes | Any | **AWS DMS** → S3 Landing → Glue | Purpose-built CDC |
+| Salesforce, SAP, ServiceNow, HubSpot, Zendesk, Workday, Marketo + 45 more | Any | No | **Amazon AppFlow** | 50+ native connectors, no code |
+| Kinesis / MSK Kafka (no transforms) | Real-time | No | **Kinesis Data Firehose** | JSON→Parquet native, zero code |
+| Kinesis / MSK Kafka (transforms needed) | Real-time | Yes | **AWS Glue Streaming ETL** | Full Spark, checkpointing |
+| S3 file drops (CSV/JSON/Parquet/ORC/Avro) | N/A | Yes | S3 Event → EventBridge → **Glue** | Already landed |
+| SFTP/FTP/FTPS partner file drops | N/A | Any | **AWS Transfer Family** → S3 → Glue | Managed SFTP server |
+| On-prem file shares (NFS, SMB, HDFS) | Any | Any | **AWS DataSync** → S3 → Glue | Incremental sync |
+| Large one-time migration (>10 TB) | One-time | Any | **AWS Snow Family** + DataSync | Bandwidth-constrained |
+| Mainframe (VSAM, DB2, IMS) | Any | Any | **AWS Mainframe Modernization** | Managed replatforming |
+| Glue Catalog cross-account sharing | N/A | No | **Lake Formation cross-account** | Zero data movement |
+| Third-party licensed datasets | N/A | No | **AWS Data Exchange** | Subscription model |
+| Redshift to data lake | Any | No | **Redshift Data Sharing** / Unload | Unload → S3 |
+| Snowflake | Any | Yes | Glue SNOWFLAKE connector | Only valid Glue JDBC use case |
+| BigQuery | Any | Yes | Glue BIGQUERY connector | Only valid Glue JDBC use case |
+| DynamoDB | Any | Any | DynamoDB native S3 Export | No Glue connection needed |
 
 ---
 
@@ -195,21 +230,25 @@ This power organizes deep knowledge into on-demand steering files. Load only wha
 
 | Steering File | Use When |
 |---------------|----------|
-| **onboarding-workflow** | Onboarding a new data source end-to-end (the master 17-step workflow) |
+| **onboarding-workflow** | Onboarding a new data source end-to-end (the master workflow) |
+| **landing-layer** | Understanding the Landing layer design, retention, partitioning, and trigger patterns |
+| **source-tool-selection** | Deciding which AWS service to use per source type (DMS, AppFlow, Firehose, etc.) |
+| **pre-deployment-validation** | Running connectivity, credential, networking, IAM, and ASL checks before deploy |
+| **glue-data-quality** | Compiling data contract rules to DQDL syntax and configuring Glue Data Quality |
 | **s3-file-ingestion** | Building S3 file pipelines (CSV, JSON, Parquet) with Glue bookmarks |
-| **jdbc-rds-ingestion** | Building JDBC/RDS pipelines with watermark incremental + MERGE INTO + PII |
-| **saas-streaming-ingestion** | Building REST API (SaaS) or Kafka/Kinesis streaming pipelines |
-| **pipeline-generation** | Understanding the code generator's template model and custom hooks |
-| **schema-inference** | Inferring schema, detecting drift, classifying sensitive columns, handling evolution |
-| **data-contracts** | Authoring data contracts: schema definitions, quality rules, SLA, evolution policies |
-| **data-contract-governance** | Contract lifecycle, versioning rules, enforcement points, MUST rules |
-| **cdk-infrastructure** | CDK stack patterns for deploying infrastructure (S3, Glue, Step Functions, etc.) |
-| **connection-setup** | Creating and testing Glue connections (JDBC, Snowflake, BigQuery) |
-| **observability** | Monitoring, alerting, structured logging, CloudWatch metrics, dashboards |
-| **security-and-access** | RBAC, credential management, approval matrices, audit trails |
-| **ingestion-standards** | Non-negotiable engineering rules for every generated pipeline |
-| **troubleshooting** | Diagnosing failures, runbooks, self-healing recommendations |
-| **well-architected** | **ALWAYS** — 52 rules across 6 AWS Well-Architected pillars enforced on every pipeline generation |
+| **jdbc-rds-ingestion** | JDBC/RDS pipelines — when transforms are genuinely needed at read time |
+| **saas-streaming-ingestion** | AppFlow SaaS flows, Kinesis Firehose, Glue Streaming ETL |
+| **pipeline-generation** | The code generator's template model, hooks, and config-to-code patterns |
+| **schema-inference** | Schema detection, drift, PII classification, and evolution handling |
+| **data-contracts** | Authoring data contracts: schema, quality rules, SLA, evolution policies |
+| **data-contract-governance** | Contract lifecycle, versioning rules, enforcement points |
+| **cdk-infrastructure** | CDK stack patterns for Glue, Step Functions, DMS, AppFlow, Firehose, Transfer Family |
+| **connection-setup** | Glue connections (JDBC, Snowflake, BigQuery) — for the cases that still need them |
+| **observability** | CloudWatch metrics, alarms, dashboards, structured logging |
+| **security-and-access** | RBAC, credential management, approval matrices, Lake Formation tagging |
+| **ingestion-standards** | Non-negotiable engineering rules (DQDL, audit columns, two-layer model) |
+| **troubleshooting** | Error taxonomy, auto-remediation runbooks, self-healing patterns |
+| **well-architected** | **ALWAYS** — 52 rules across 6 AWS Well-Architected pillars enforced on every generation |
 
 **Usage:** Call `readSteering` with the steering file name to load detailed guidance for that topic.
 
@@ -319,57 +358,61 @@ User Request
 
 These principles apply to ALL work performed under this power:
 
-1. **Zero hand-written plumbing** — every pipeline is generated from config; custom logic is injected only where business-specific.
-2. **Contracts at the boundary** — every source has a data contract defining schema, freshness SLA, volume bounds, and quality rules.
-3. **Observe everything** — pipelines emit CloudWatch metrics (rows processed, errors, latency, freshness) from day one.
-4. **Fail fast, fail loud** — errors are quarantined, SNS alerts fired, and never silently swallowed.
-5. **Immutable bronze** — raw data is append-only Iceberg; never mutate the landing layer.
-6. **Self-service does not mean ungoverned** — business users can onboard sources, but every request passes through automated validation and (where needed) human approval.
-7. **Schema is a first-class citizen** — inferred, versioned, and evolution-handled automatically.
-8. **Incremental by default** — Glue bookmarks for S3, watermarks for JDBC, checkpoints for streaming.
-9. **Never drop data** — quarantine invalid rows with clear error reasons.
-10. **Least privilege everywhere** — IAM scoped to specific resources, Lake Formation for column-level access.
+1. **Right tool per source** — never default to Glue JDBC; use DMS for databases, AppFlow for SaaS, Firehose for streaming. Glue reads from S3 only.
+2. **Two layers: Landing + Raw** — Landing gets data to S3 fast and cheap; Raw makes it trustworthy and governed.
+3. **Validate before generating** — pre-deployment validation (connectivity, credentials, SG, IAM, ASL) must pass before any code is generated or deployed.
+4. **DQDL over custom code** — data contract quality rules compile to Glue Data Quality DQDL syntax; no hand-rolled validator classes.
+5. **Contracts at the boundary** — every source has a versioned data contract defining schema, freshness SLA, volume bounds, and quality rules.
+6. **Observe everything** — pipelines emit CloudWatch metrics (rows processed, errors, latency, freshness) from day one.
+7. **Fail fast, fail loud** — errors are quarantined, SNS alerts fired, never silently swallowed.
+8. **Immutable bronze** — Raw/Bronze is append-only Iceberg; never mutate the landing or raw layer.
+9. **Self-service does not mean ungoverned** — every onboarding request passes through automated validation gates and (where needed) human approval.
+10. **Schema is a first-class citizen** — inferred, versioned, and evolution-handled automatically.
+11. **Never drop data** — quarantine invalid rows with clear error reasons.
+12. **Least privilege everywhere** — IAM scoped to specific resources, Lake Formation for column-level access.
 
 ---
 
 ## Capability Model
 
-The platform is organized into seven interlocking capabilities:
-
 | # | Capability | What It Delivers |
 |---|-----------|------------------|
-| 1 | **Source Registry** | Centralized inventory of all data sources (DynamoDB) with metadata, status, and lineage — discovery powered by `skills/finding-data-lake-assets` and `skills/exploring-data-catalog` |
-| 2 | **Connection Manager** | Glue connection setup, credential registration, connectivity testing — powered by `skills/connecting-to-data-source` |
-| 3 | **Schema Inference Engine** | Automatic schema detection, typing, sensitive-field classification, drift detection |
-| 4 | **Data Contract Engine** | Machine-readable contracts: define, validate, version, and enforce quality agreements |
-| 5 | **Pipeline Generator** | Template-driven, config-to-code engine producing AWS Glue ETL jobs + CDK stacks — execution powered by `skills/ingesting-into-data-lake` and `skills/creating-data-lake-table` |
-| 6 | **Observability** | CloudWatch metrics, freshness SLAs, SNS alerting, dashboards, and self-healing recommendations — validation via `skills/querying-data-lake` |
-| 7 | **Self-Serve Portal** | Business-user-facing request, approve, generate, deploy experience |
+| 1 | **Source Registry** | Centralized inventory of all data sources (DynamoDB) with metadata, status, and lineage |
+| 2 | **Tool Selector** | Recommends the right AWS ingestion service per source type with cost comparison — powered by `steering/source-tool-selection.md` |
+| 3 | **Pre-Deploy Validator** | Connectivity, credential, networking, IAM, and ASL checks before any code generation — powered by `steering/pre-deployment-validation.md` |
+| 4 | **Schema Inference Engine** | Automatic schema detection, typing, sensitive-field classification, drift detection |
+| 5 | **Data Contract Engine** | Machine-readable contracts compiled to DQDL rules for Glue Data Quality |
+| 6 | **Pipeline Generator** | Config-to-code engine producing Landing service config + Raw Glue job + IaC stacks |
+| 7 | **Observability** | CloudWatch metrics, freshness SLAs, error taxonomy with auto-remediation, self-healing |
 
 ### How Capabilities Interlock
 
 ```
-Business User / Data Team
-         |
-         v
-Self-Serve Portal  -->  Source Registry  -->  Connection Manager
-(request + approve)      (register)            (test connectivity)
-                              |                       |
-                              v                       v
-                        Schema Inference  --->  Data Contract Engine
-                        (detect + classify)    (validate + version)
-                              |                       |
-                              v                       v
-                        Pipeline Generator  <--- Contract Validation
-                        (config -> Glue job + CDK)
-                              |
-                              v
-                        Deployed Pipeline
-                        (running in AWS Glue)
-                              |
-                              v
-                        Observability
-                        (CloudWatch + SNS + Self-Healing)
+User request
+     │
+     ▼
+Q1-Q7 Discovery + Cost Comparison
+     │
+     ▼
+Pre-Deploy Validation  ──── FAIL → stop, fix, retry
+     │ PASS
+     ▼
+Schema Inference + Data Contract (DQDL rules compiled)
+     │
+     ▼
+┌──────────────────────────────┐
+│  LANDING LAYER               │  ← DMS / AppFlow / Firehose / Transfer Family / DataSync
+│  Plain S3, source format     │
+└──────────────────────────────┘
+     │  S3 Event → EventBridge
+     ▼
+┌──────────────────────────────┐
+│  RAW / BRONZE LAYER          │  ← Glue ETL (reads S3 only) + Glue Data Quality (DQDL)
+│  Iceberg, audit cols, tagged │
+└──────────────────────────────┘
+     │
+     ▼
+IaC Deploy (CDK / Terraform / CloudFormation) + Observability
 ```
 
 ---
@@ -379,37 +422,38 @@ Self-Serve Portal  -->  Source Registry  -->  Connection Manager
 ### High-Level Flow
 
 ```
-1. Source owner fills out onboarding-request.yaml
+1. Q1-Q7 Discovery (ask 1-2 questions per turn)
    ↓
 2. Duplicate check in Source Registry (DynamoDB)
    ↓
 3. Register source (status: pending)
    ↓
-4. Test connectivity (Glue Connection + Secrets Manager)
+4. Show cost comparison — confirm ingestion service with user
    ↓
-5. Infer schema + classify sensitivity
+5. Pre-deployment validation
+   (connectivity / credentials / SG self-reference / IAM / ASL)
    ↓
-6. Risk assessment (auto-approve if no PII; Data Steward review if sensitive)
+6. Infer schema + classify PII/PHI sensitivity
    ↓
-7. Author data-contract.yaml (schema, quality rules, SLAs)
+7. Risk assessment (auto-approve if no PII; Data Steward review if sensitive)
    ↓
-8. Author pipeline-config.yaml (source connection, execution, environments)
+8. Author data-contract.yaml → compile DQDL quality rules
    ↓
-9. Generate Glue ETL job from templates
+9. Provision Landing layer (DMS / AppFlow / Firehose / Transfer Family / DataSync)
    ↓
-10. Deploy CDK stack (buckets, Glue job, Step Functions, alarms)
-   ↓
-11. Upload Glue script to S3, run smoke test in dev
-   ↓
-12. Validate results in Athena, check quarantine table
-   ↓
-13. Promote through dev -> test -> prod
-   ↓
+10. Generate Glue ETL job (reads from Landing S3) + IaC stack
+    ↓
+11. Deploy to dev (CDK / Terraform / CloudFormation)
+    ↓
+12. Run smoke test — validate Landing S3 files + Raw Iceberg table
+    ↓
+13. Promote dev → test → prod (gate checks at each step)
+    ↓
 14. Activate observability (CloudWatch metrics, alarms, dashboards)
-   ↓
+    ↓
 15. Update Source Registry (status: active)
-   ↓
-16. Notify requester
+    ↓
+16. Notify requester + generate pipeline report
 ```
 
 ### Estimated Timeline
@@ -425,138 +469,119 @@ Self-Serve Portal  -->  Source Registry  -->  Connection Manager
 ## Project Structure (Per Pipeline)
 
 ```
-{source-name}-ingestion-pipeline/
+{source-name}-ingestion-pipeline/   ← always inside workspace root
 ├── config/
 │   ├── onboarding-request.yaml     # Source metadata, owner, sensitivity, SLA
-│   ├── data-contract.yaml          # Schema, quality rules, evolution policy
-│   └── pipeline-config.yaml        # Connection, execution, environments
+│   ├── data-contract.yaml          # Schema, quality rules (compiled to DQDL), evolution policy
+│   └── pipeline-config.yaml        # Ingestion service config + Glue job settings
+├── landing/                        # Landing layer configuration
+│   ├── dms-task.json               # DMS task definition (databases)
+│   ├── appflow-flow.json           # AppFlow flow definition (SaaS)
+│   ├── firehose-delivery.json      # Firehose delivery stream config (streaming)
+│   └── transfer-family.json        # Transfer Family server + S3 mapping (SFTP)
 ├── src/
-│   └── {source}_{table}_ingest.py  # Glue ETL job (generated)
-│   └── utils/                      # Shared utilities
-│       ├── contract_validator.py
+│   └── {source}_{table}_raw.py     # Glue ETL job (Landing → Raw, reads S3 only)
+│   └── utils/
+│       ├── dqdl_rules.txt          # Compiled DQDL quality rules
 │       ├── metrics_emitter.py
 │       ├── quarantine_router.py
-│       └── watermark_manager.py    # (JDBC sources only)
-├── cdk/                            # Generated if IaC = CDK
-│   ├── app.py                      # CDK app entry point
-│   ├── cdk.json                    # CDK context (env-specific overrides)
-│   ├── ingestion_stack.py          # Full infrastructure stack
-│   ├── constructs/                 # Modular CDK constructs
-│   │   ├── glue_job.py
-│   │   ├── step_function.py
-│   │   ├── eventbridge_schedule.py
-│   │   └── iam_roles.py
-│   └── requirements.txt            # CDK dependencies
-├── terraform/                      # Generated if IaC = Terraform
-│   ├── main.tf                     # Root module (Glue job, Step Functions, alarms)
-│   ├── variables.tf                # Input variables (source_name, env, schedule)
-│   ├── outputs.tf                  # Output values (ARNs, table names)
-│   ├── versions.tf                 # required_version + required_providers
-│   ├── backend.tf                  # S3 + DynamoDB state locking
-│   ├── environments/               # Per-environment variable files
-│   │   ├── dev.tfvars
-│   │   ├── test.tfvars
-│   │   └── prod.tfvars
-│   └── modules/                    # Reusable modules
-│       ├── glue_job/
-│       ├── step_function/
-│       ├── eventbridge_schedule/
-│       └── iam_roles/
-├── cloudformation/                 # Generated if IaC = CloudFormation
-│   ├── template.yaml              # Full stack template
-│   └── parameters/                # Per-environment parameter files
-│       ├── dev.json
-│       ├── test.json
-│       └── prod.json
-├── resources/
-│   └── state_machine.json          # Step Functions definition (reference)
+│       └── watermark_manager.py
+├── cdk/                            # If IaC = CDK
+├── terraform/                      # If IaC = Terraform
+│   ├── main.tf / variables.tf / outputs.tf / versions.tf / backend.tf
+│   └── environments/ (dev.tfvars, test.tfvars, prod.tfvars)
+├── cloudformation/                 # If IaC = CloudFormation
 ├── tests/
-│   └── test_{source}_{table}_ingest.py  # Unit tests (generated)
 ├── reports/
-│   └── generation_report.md        # Audit trail of what was generated
-├── sample-data/                    # Test data for validation
+│   └── generation_report.md
 └── README.md
 ```
-
-**Only one IaC directory is generated per pipeline** — based on the user's preference (asked once in Step 3 of discovery).
 
 ---
 
 ## Core Patterns
 
+### Two-Layer Architecture
+
+```
+LANDING LAYER
+  Purpose  : Get data to S3 as-is, as fast and cheaply as possible
+  Storage  : Plain S3 (Parquet or source format) — NO Iceberg
+  Content  : Exact copy of source — no transforms, no validation, no masking
+  Partition: year/month/day of arrival
+  Retention: 90 days (reprocessing buffer)
+  Trigger  : S3 Event Notification → EventBridge → Glue Raw job
+
+RAW (BRONZE) LAYER
+  Purpose  : Make the landed data trustworthy and governable
+  Storage  : S3 + Apache Iceberg (ACID, time-travel, schema evolution)
+  Content  : Landing data + audit columns + DQDL quality validation + dedup
+  PII      : Classified and tagged via Lake Formation (NO masking — Silver's job)
+  Retention: Per data contract (default 7 years)
+```
+
+### Data Quality: DQDL (Glue Data Quality)
+
+Data contract quality rules compile to DQDL syntax — no custom Python validator:
+
+```
+Rules = [
+    Completeness "order_id" >= 0.99,
+    IsUnique "order_id",
+    ColumnValues "total_amount" >= 0,
+    ColumnValues "status" in ["PENDING","CONFIRMED","SHIPPED","CANCELLED"],
+    CustomSql "SELECT COUNT(*) FROM primary WHERE updated_at < created_at" = 0
+]
+```
+
+### Intelligent Worker Sizing
+
+```
+timeout_minutes = 10 (provisioning buffer)
+                + (volume_gb / throughput_per_dpu_gb_per_min)
+                × 1.2 (safety margin)
+
+For initial full load: timeout × 3
+For S3-sourced Glue jobs (Landing → Raw): worker_count × 0.5
+  (S3 reads are ~2× faster than JDBC reads)
+```
+
+| Volume per Batch | Worker Type | Workers | Timeout | Notes |
+|---|---|---|---|---|
+| < 1 GB | G.1X | 2 | 15 min | |
+| 1–10 GB | G.1X | 5 | 30 min | |
+| 10–50 GB | G.1X | 10 | 60 min | |
+| > 50 GB | G.2X | 10 | 120 min | |
+| SLA > 2 hours | Any | Any | Any | Use Flex execution class (35% cost saving) |
+
 ### Quarantine Pattern
 
-Invalid rows are **never dropped silently**. They are routed to a `{table}_quarantine` Iceberg table with:
-- `_error_reason` — which validation rule failed
-- `_quarantined_at` — timestamp
-- `_batch_id` — correlates to the main pipeline run
+Invalid rows are **never dropped silently**. They route to `{table}_quarantine` with `_error_reason`, `_quarantined_at`, `_batch_id`. If quarantine rate exceeds 5%, pipeline halts and fires alarm.
 
-If the quarantine rate exceeds a configurable threshold (default 5%), the pipeline **halts** and fires an alarm.
-
-### Audit Columns
-
-Every row in the bronze layer carries:
+### Audit Columns (Raw Layer — every row)
 
 | Column | Purpose |
 |--------|---------|
-| `_ingested_at` | UTC timestamp of ingestion |
-| `_source_file` | S3 path or JDBC URI identifying the source |
+| `_ingested_at` | UTC timestamp of ingestion into Raw |
+| `_source_file` | Landing S3 path that was processed |
 | `_batch_id` | UUID correlating all rows in one pipeline run |
 | `_pipeline_version` | Semantic version of the ETL code |
 | `_row_hash` | SHA-256 hash for deduplication |
 | `_ingested_date` | Date partition key (derived from `_ingested_at`) |
 
-### Deduplication
+### Error Taxonomy with Auto-Remediation
 
-- **Within-batch**: Hash-based (`_row_hash`) — exact duplicate rows removed
-- **Cross-batch** (JDBC/CDC only): MERGE INTO by merge key — updates if newer, inserts if new
-
-### Data Quality Validation
-
-Quality rules from the data contract are enforced in-pipeline:
-- Nullability checks on required fields
-- Range validations (min/max values)
-- Pattern matching (regex for emails, IDs)
-- Allowed value sets (enum validation)
-- Cross-field validation (e.g., `updated_at >= created_at`)
-- Referential integrity where applicable
-
-### Schema Drift Handling
-
-| Drift Type | Impact | Response |
-|------------|--------|----------|
-| New column (additive) | Low | Auto-add as nullable; bump MINOR |
-| Missing column | Medium | Alert; check if temporary or permanent |
-| Type widening (INT→BIGINT) | Low | Auto-cast; bump MINOR |
-| Type narrowing | High | Quarantine affected rows; pause; MAJOR bump |
-| Column rename | High | Treated as drop + add; human review required |
-
-### Environment Promotion
-
-```bash
-# Dev (default, EventBridge disabled)
-cdk deploy --context env=dev
-
-# Test (integration testing)
-cdk deploy --context env=test
-
-# Production (EventBridge enabled, higher worker count)
-cdk deploy --context env=prod
-```
-
----
-
-## Pluggable Source Connectors
-
-| Source Type | Connector | Method | Key Features |
-|-------------|-----------|--------|-------------|
-| Relational DB | JDBC | Glue Connection + Spark JDBC | Watermark incremental, parallel reads, MERGE INTO |
-| SaaS (Salesforce, HubSpot, etc.) | REST API + SDK | Paginated fetch → Iceberg | OAuth refresh, rate limiting, pagination |
-| Cloud Storage (S3, ADLS, GCS) | S3 Event + Glue Crawler | Incremental file discovery | Bookmark tracking, schema inference |
-| Streaming (Kafka, Kinesis) | Glue Streaming ETL | Continuous micro-batch | Checkpointing, exactly-once semantics |
-| Flat Files (CSV, JSON, Parquet, XML) | S3 + Glue Crawler | Schema inference + processing | Format auto-detection, encoding handling |
-| Snowflake | SNOWFLAKE connection type | Native Glue connector | NOT JDBC (important!) |
-| BigQuery | BIGQUERY connection type | Cross-cloud adapter | Service account auth |
+| Error Signal | Auto-Remediation |
+|---|---|
+| `security group must open all ingress ports` | Auto-add self-referencing SG rule (if IAM permits) |
+| `Access denied for user` (MySQL/PostgreSQL) | Check Secrets Manager keys, prompt to verify/rotate |
+| `TIMEOUT — Waiting to start the job run` | Increase timeout, suggest Flex class, suggest off-peak schedule |
+| `not authorized to perform: glue:GetConnection` | Auto-add permission to SFN execution role |
+| `SCHEMA_VALIDATION_FAILED: value must be a valid JSONPath` | Fix `States.Format` expression in ASL |
+| `G.025X is only supported for job command gluestreaming` | Auto-correct to G.1X for glueetl jobs |
+| `UnableToFindVpcEndpoint` | Create S3 gateway endpoint in connection VPC |
+| `ORA-01017: invalid username/password` | Verify secret, check Oracle user lock status |
+| `No suitable driver found` | Upload driver JAR to S3, add `--extra-jars` |
 
 ---
 
@@ -700,18 +725,23 @@ Kiro reads it and enforces all 52 rules automatically. Every generated pipeline 
 
 | Document | What It Covers |
 |---|---|
+| [AWS DMS User Guide](https://docs.aws.amazon.com/dms/latest/userguide/) | Database replication, CDC, S3 target config |
+| [Amazon AppFlow User Guide](https://docs.aws.amazon.com/appflow/latest/userguide/) | SaaS connectors, flow setup, Parquet output |
+| [Kinesis Data Firehose](https://docs.aws.amazon.com/firehose/latest/dev/) | Zero-code streaming to S3, JSON→Parquet conversion |
+| [AWS Transfer Family](https://docs.aws.amazon.com/transfer/latest/userguide/) | SFTP/FTP/FTPS managed server, S3 backend |
+| [AWS DataSync](https://docs.aws.amazon.com/datasync/latest/userguide/) | On-premises to S3 incremental file sync |
+| [Aurora S3 Export](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/exporttasks.html) | Native Parquet snapshot export to S3 |
+| [Aurora Zero-ETL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/zero-etl.html) | Aurora → Redshift native replication |
+| [AWS Glue Data Quality](https://docs.aws.amazon.com/glue/latest/dg/glue-data-quality.html) | DQDL rules, data quality results, catalog integration |
 | [AWS Glue Developer Guide](https://docs.aws.amazon.com/glue/latest/dg/) | ETL jobs, connections, crawlers, Data Catalog |
 | [Amazon S3 Tables](https://docs.aws.amazon.com/AmazonS3/latest/userguide/s3-tables.html) | Managed Iceberg tables with auto-compaction |
-| [Apache Iceberg on AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/apache-iceberg-on-aws/) | Iceberg table format patterns on AWS |
 | [Amazon Athena User Guide](https://docs.aws.amazon.com/athena/latest/ug/) | SQL queries across Glue, S3 Tables, Redshift |
-| [AWS Step Functions](https://docs.aws.amazon.com/step-functions/latest/dg/) | Workflow orchestration for pipelines |
+| [AWS Step Functions](https://docs.aws.amazon.com/step-functions/latest/dg/) | Workflow orchestration, ASL validation |
 | [AWS CDK Developer Guide](https://docs.aws.amazon.com/cdk/v2/guide/) | Infrastructure as Code (Python) |
-| [AWS Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/) | Column-level security, data governance |
-| [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/) | Credential management and rotation |
-| [Amazon CloudWatch](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/) | Metrics, alarms, dashboards |
+| [AWS Lake Formation](https://docs.aws.amazon.com/lake-formation/latest/dg/) | Column-level tagging, cross-account sharing |
 | [AWS Well-Architected Framework](https://docs.aws.amazon.com/wellarchitected/latest/framework/) | Six pillars of architecture best practices |
-| [AWS Glue Connection Types](https://docs.aws.amazon.com/glue/latest/dg/connection-types.html) | JDBC, SNOWFLAKE, BIGQUERY, KAFKA connection setup |
-| [Amazon EventBridge Scheduler](https://docs.aws.amazon.com/eventbridge/latest/userguide/scheduler.html) | Cron-based pipeline scheduling |
+| [Lake Formation Cross-Account](https://docs.aws.amazon.com/lake-formation/latest/dg/cross-account-permissions.html) | Data sharing without copying |
+| [AWS Data Exchange](https://docs.aws.amazon.com/data-exchange/latest/userguide/) | Third-party dataset subscriptions |
 
 ---
 

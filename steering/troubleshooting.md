@@ -5,10 +5,37 @@
 This guide activates when:
 - A Glue job fails (exit code ≠ 0)
 - Step Functions execution enters FAILED or TIMED_OUT state
+- DMS replication task fails or enters ERROR state
+- AppFlow flow run fails
+- Firehose delivery stream enters SUSPENDED state
 - Freshness SLA alarm fires (no successful run within threshold)
-- Data quality checks fail (quarantine records exceed threshold)
+- Data quality checks fail (DQDL quarantine records exceed threshold)
 - Pipeline produces zero rows when rows were expected
 - CloudWatch alarm triggers for any pipeline metric
+
+---
+
+## Error Taxonomy with Auto-Remediation
+
+Known failure patterns mapped to automatic fixes. The power attempts remediation before escalating.
+
+| Error Signal | Root Cause | Auto-Remediation | Requires Approval? |
+|---|---|---|---|
+| `security group must open all ingress ports` | Missing self-referencing SG rule | Add self-referencing rule to Glue SG | No (non-destructive) |
+| `Access denied for user` (MySQL/PostgreSQL) | Wrong credentials | Check Secrets Manager keys, prompt to verify/rotate | Yes |
+| `ORA-01017: invalid username/password` | Oracle credentials wrong | Verify secret, check Oracle account lock status | Yes |
+| `TIMEOUT — Waiting to start the job run` | Glue capacity queue full | Increase timeout, suggest Flex execution class, suggest off-peak schedule | No |
+| `not authorized to perform: glue:GetConnection` | Missing IAM permission | Auto-add `glue:GetConnection` to SFN execution role | No |
+| `SCHEMA_VALIDATION_FAILED: value must be a valid JSONPath` | Bad `States.Format` expression | Fix JSONPath syntax in state machine definition | No |
+| `G.025X is only supported for job command gluestreaming` | Wrong worker type for glueetl | Auto-correct to G.1X | No |
+| `UnableToFindVpcEndpoint` | Missing S3 VPC endpoint | Create S3 gateway endpoint in VPC | No |
+| `No suitable driver found` | Missing JDBC driver JAR | Upload driver JAR to S3, add `--extra-jars` | No |
+| `Connect timed out` / `Connection refused` | VPC routing or NAT missing | Check subnet routes, SG egress, NAT gateway | No (diagnostic only) |
+| `DMS replication task ERROR` | Source connectivity or permission | Check DMS endpoint connectivity, source grants | No (diagnostic) |
+| `AppFlow CONNECTOR_RUNTIME_ERROR` | OAuth token expired | Refresh connector profile credentials | Yes |
+| `Firehose SUSPENDED` | Delivery failures exceeding threshold | Check S3 bucket permissions, fix, resume | No |
+| DQDL quarantine rate > threshold | Data quality degradation | Alert, inspect quarantine table, check source | Yes |
+| `Container killed by YARN` / OOM | Worker memory exhausted | Scale up: G.1X → G.2X or increase worker count | No |
 
 ---
 

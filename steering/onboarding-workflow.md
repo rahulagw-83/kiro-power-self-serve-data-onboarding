@@ -1,9 +1,10 @@
 # Onboarding Workflow: New Data Source (End-to-End)
 
 > **Master Workflow** — This is the canonical workflow Kiro follows when onboarding any
-> data source into the governed data lake. It unifies self-serve and engineer-led paths,
-> covering S3 file drops, JDBC/RDS databases, and SaaS platform connectors. Every step
-> references the responsible tool or sub-workflow so execution is deterministic.
+> data source into the governed data lake. It uses a **two-layer architecture** (Landing + Raw),
+> selects the **right AWS service per source type** (DMS, AppFlow, Firehose, Transfer Family, DataSync),
+> and runs **mandatory pre-deployment validation** before any code is generated.
+> Glue ETL reads from Landing S3 only — never directly from the source system.
 
 ---
 
@@ -13,41 +14,213 @@ Before starting any onboarding:
 
 | # | Requirement | How to verify |
 |---|-------------|---------------|
-| 1 | AWS account bootstrapped with CDK | `cdk bootstrap` completed in target account/region |
-| 2 | S3 Table Bucket exists for bronze layer | `aws s3tables list-table-buckets` returns at least one bucket |
+| 1 | AWS account bootstrapped (CDK/Terraform/CFN) | IaC tool can deploy to target account/region |
+| 2 | S3 data lake bucket exists | `aws s3api head-bucket --bucket {data-lake-bucket}` |
 | 3 | DynamoDB Source Registry table exists | `aws dynamodb describe-table --table-name SourceRegistry` |
 | 4 | Glue Data Catalog database for raw zone | `aws glue get-database --name raw_zone` |
 | 5 | IAM role for Glue jobs with baseline policy | Role ARN stored in SSM `/data-platform/glue-role-arn` |
-| 6 | VPC with NAT + Glue connection (for JDBC) | Connection name stored in SSM `/data-platform/glue-connection` |
-| 7 | Secrets Manager secret template (for JDBC) | Secret ARN pattern `data-platform/{source_name}/credentials` |
+| 6 | Landing prefix `s3://{bucket}/landing/` exists | Convention, not a separate bucket |
+| 7 | EventBridge configured for S3 notifications | Bucket has EventBridge integration enabled |
 
 ---
 
 ## Estimated Timeline
 
-| Complexity | Source Type | Estimated Duration | Examples |
-|------------|-------------|-------------------|----------|
-| Low | S3 file (CSV/JSON/Parquet) | < 1 hour | Daily CSV export from vendor |
-| Medium | JDBC database (single table) | 2–4 hours | PostgreSQL orders table |
-| High | JDBC multi-table / SaaS API | 4–8 hours | Full Salesforce sync, Oracle ERP |
+| Complexity | Source Type | Ingestion Service | Estimated Duration |
+|---|---|---|---|
+| Low | S3 file drops | EventBridge → Glue | < 30 min |
+| Low | SaaS (AppFlow supported) | AppFlow → S3 → Glue | < 1 hour |
+| Medium | Database (DMS CDC) | DMS → S3 → Glue | 2–4 hours |
+| Medium | Streaming (Firehose) | Firehose → S3 → Glue | 1–2 hours |
+| Medium | SFTP partner files | Transfer Family → S3 → Glue | 1–2 hours |
+| High | Database (multi-table, transforms) | DMS → S3 → Glue (complex) | 4–8 hours |
+| High | On-premises / mainframe | DataSync/Snow/M2 → S3 → Glue | 8+ hours |
 
 ---
 
-## Phase 1: Request & Register
+## Phase 1: Discovery & Register
 
-### Step 1 — Capture Requirements
+### Step 1 — Q1-Q7 Discovery
 
-Collect source metadata using the `onboarding-request.yaml` template. The template
-adapts based on source type (S3, JDBC, or SaaS). See the full template at the end
-of this document.
+Ask discovery questions (1-2 per turn) to determine architecture:
 
-**Actions:**
-1. Present the onboarding-request template to the requester.
-2. Validate required fields are populated.
-3. Infer complexity (low/medium/high) from source type + table count.
-4. Store the completed request as `onboarding-request.yaml` in the pipeline workspace.
+| Question | Purpose | Drives |
+|---|---|---|
+| Q1: Source type + system | What are we connecting to? | Tool selection |
+| Q2: CDC vs snapshots | How often does data change? | DMS vs Aurora Export |
+| Q3: Transforms needed? | Landing-only or Landing+Raw? | Glue involvement |
+| Q4: Freshness SLA | How fast must data arrive? | Firehose vs daily batch |
+| Q5: Data volume | How much per batch? | Worker sizing |
+| Q6: One-time vs recurring | Migration or pipeline? | Schedule configuration |
+| Q7: PII/PHI sensitivity | Compliance requirements? | Approval routing, Lake Formation tags |
 
-### Step 2 — Duplicate Check
+### Step 2 — Duplicate Check + Source Registry
+
+Query DynamoDB Source Registry. If duplicate with `status=active` → abort. If `status=failed` → offer retry. Otherwise register with `status=pending`.
+
+### Step 3 — Cost Comparison + Tool Confirmation
+
+Present cost comparison for applicable services (see `steering/source-tool-selection.md`). Wait for user to confirm approach before proceeding.
+
+---
+
+## Phase 2: Validation & Schema
+
+### Step 4 — Pre-Deployment Validation
+
+Run ALL checks from `steering/pre-deployment-validation.md`:
+
+1. **Connectivity** — Can we reach the source? (test-connection / DMS test / S3 ls)
+2. **Credentials** — Secret exists, keys valid, not stale?
+3. **Networking** — SG self-reference, subnet routes, S3 VPC endpoint?
+4. **IAM** — Roles have all required permissions?
+5. **ASL** — State machine definition valid?
+6. **Worker Type** — G.025X not used for glueetl?
+
+**If ANY check fails → STOP. Fix before proceeding.**
+
+### Step 5 — Infer Schema + Classify Sensitivity
+
+Sample data from Landing (if already available) or from source:
+- Detect columns, types, nullability, cardinality
+- Classify PII/PHI using pattern matching rules
+- Present classification table for user review
+- Auto-approve if all public/internal; require Data Steward if restricted/PHI
+
+### Step 6 — Author Data Contract + Compile DQDL
+
+Generate `data-contract.yaml` with:
+- Schema definition from inference
+- Quality rules auto-generated from column properties
+- Freshness SLA from Q4 answer
+- Evolution policy based on sensitivity
+
+Compile quality rules to DQDL syntax (see `steering/glue-data-quality.md`).
+
+---
+
+## Phase 3: Landing Layer Provisioning
+
+### Step 7 — Provision Landing Ingestion Service
+
+Based on tool confirmed in Step 3:
+
+| Tool | Provisioning Action |
+|---|---|
+| **AWS DMS** | Create replication instance, source/target endpoints, replication task with S3 Parquet target |
+| **Amazon AppFlow** | Create connector profile + flow (source → S3 Landing, Parquet, scheduled) |
+| **Kinesis Firehose** | Create delivery stream (JSON→Parquet conversion, S3 Landing prefix) |
+| **Transfer Family** | Create SFTP server + S3 storage mapping + user |
+| **DataSync** | Create source/destination locations + task (on-prem → S3 Landing) |
+| **Aurora S3 Export** | Configure export task (snapshot → S3 Landing, Parquet) |
+| **S3 (already landed)** | No provisioning needed — files already in Landing |
+
+### Step 8 — Configure Landing → Raw Trigger
+
+Set up EventBridge rule to trigger the Raw pipeline when new files arrive in Landing:
+
+```json
+{
+  "source": ["aws.s3"],
+  "detail-type": ["Object Created"],
+  "detail": {
+    "bucket": {"name": ["{data-lake-bucket}"]},
+    "object": {"key": [{"prefix": "landing/{source_name}/"}]}
+  }
+}
+```
+
+Target: Step Functions state machine (which runs the Glue Raw job).
+
+---
+
+## Phase 4: Raw Layer Pipeline
+
+### Step 9 — Generate Glue ETL Job (Landing → Raw)
+
+Generate a Glue job that:
+1. Reads from Landing S3 path (Parquet or source format)
+2. Adds audit columns (`_ingested_at`, `_source_file`, `_batch_id`, `_row_hash`, `_ingested_date`)
+3. Runs DQDL quality rules (compiled from contract)
+4. Routes failures to `{table}_quarantine` Iceberg table
+5. Deduplicates via `_row_hash` (within-batch) and merge key (cross-batch)
+6. Writes pass rows to Raw Iceberg table (append or MERGE INTO)
+7. Emits CloudWatch metrics
+
+**Key:** This job reads from S3 only — never from the source system directly.
+
+### Step 10 — Generate IaC Stack
+
+Based on user's IaC choice (CDK / Terraform / CloudFormation), generate:
+- Landing ingestion service config (DMS task / AppFlow flow / Firehose stream)
+- Glue job definition with intelligent worker sizing
+- Step Functions state machine (pre-flight → Glue → post-flight)
+- EventBridge rule (Landing → Raw trigger)
+- IAM roles (least privilege)
+- CloudWatch alarms (failure, freshness SLA, quarantine rate)
+- S3 lifecycle rule (Landing 90-day expiration)
+
+---
+
+## Phase 5: Deploy & Validate
+
+### Step 11 — Deploy to Dev
+
+Deploy using the user's IaC tool:
+
+| Tool | Command |
+|---|---|
+| CDK | `cdk deploy DataPipeline-{source}-dev --context env=dev` |
+| Terraform | `terraform apply -var-file=environments/dev.tfvars` |
+| CloudFormation | `aws cloudformation deploy --template-file template.yaml --parameter-overrides Environment=dev` |
+
+### Step 12 — Smoke Test
+
+1. Trigger Landing ingestion (initial load or first file)
+2. Verify files appear in `s3://{bucket}/landing/{source}/`
+3. Verify EventBridge triggers Raw pipeline
+4. Verify data appears in Raw Iceberg table via Athena
+5. Verify DQDL quality results in Glue Console
+6. Verify zero quarantine rows (for clean test data)
+7. Verify CloudWatch metrics emitted
+
+### Step 13 — Integration Tests + Promote
+
+Full-volume test in dev → gate check → deploy to test → gate check → deploy to prod.
+
+Gate requirements:
+- All DQDL rules pass
+- Quarantine rate < threshold
+- Duration < SLA
+- Cost within estimate
+- Rollback procedure documented
+
+---
+
+## Phase 6: Activate & Notify
+
+### Step 14 — Enable Production Schedule
+
+| Tool | Activation |
+|---|---|
+| DMS | Set replication task to start CDC |
+| AppFlow | Enable scheduled flow runs |
+| Firehose | Already running (real-time) |
+| EventBridge | Enable the schedule rule |
+| Transfer Family | Server already accepting connections |
+
+### Step 15 — Activate Observability
+
+- CloudWatch alarms: job failure (P2), freshness SLA breach (P2), quarantine spike (P2)
+- Dashboard: pipeline health, volume trends, cost per run
+- SNS notifications: on-call team for P1/P2 alerts
+
+### Step 16 — Update Registry + Notify
+
+- Source Registry status → `active`
+- Record `pipeline_arn`, `target_table`, `activated_at`
+- Send completion notification to requester
+- Post to data platform channel
 
 Query the DynamoDB Source Registry to prevent re-onboarding an existing source.
 

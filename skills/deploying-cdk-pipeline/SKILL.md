@@ -19,6 +19,11 @@ Deploy, validate, and promote ingestion pipeline infrastructure across environme
 Manages the full deployment lifecycle from dev through production with gate checks,
 verification, and rollback capability.
 
+**Two-layer context:** Deployment includes both Landing layer services (DMS tasks,
+AppFlow flows, Firehose streams, Transfer Family servers) AND Raw layer infrastructure
+(Glue jobs, Step Functions, EventBridge rules, CloudWatch alarms). Pre-deployment
+validation from `steering/pre-deployment-validation.md` MUST pass before deploy.
+
 ## Philosophy
 
 **Diff before deploy, verify after deploy, gate before promote.** Every deployment

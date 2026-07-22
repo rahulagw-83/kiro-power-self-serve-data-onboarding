@@ -8,15 +8,16 @@ inclusion: always
 > every auto-generated or manually created ingestion pipeline. Every pipeline
 > Kiro generates MUST satisfy these constraints.
 
-## 1. Landing Layer Rules
+## 1. Two-Layer Architecture Rules
 
 | Rule | Rationale |
 |------|-----------|
-| **Append-only bronze** | Raw data is never mutated; enables reprocessing and audit |
-| **Iceberg snapshots enabled** | Downstream consumers get incremental changes efficiently via snapshot-based reads |
-| **S3 paths only** | `s3://<bucket>/<source>/raw/` — no local paths, no hardcoded prefixes |
-| **No business logic in bronze** | Raw capture only; transformations happen in silver |
-| **Partitioned by ingestion date** | `_ingested_date` partition for time-travel and cost efficiency |
+| **Landing = raw copy** | No transforms, no validation, no masking in Landing |
+| **Raw = governed Iceberg** | Audit columns, DQDL quality, dedup, Lake Formation tags |
+| **Glue reads from S3 only** | Never read directly from source via JDBC/API in Glue |
+| **Partitioned Landing** | `year=YYYY/month=MM/day=DD/` for time-bounded reprocessing |
+| **90-day Landing retention** | S3 lifecycle rule deletes Landing files after 90 days |
+| **EventBridge trigger** | New Landing files → EventBridge → Step Functions → Glue |
 
 ## 2. Mandatory Audit Columns
 
@@ -46,11 +47,14 @@ Quarantine table naming: `<database>.<table>_quarantine` (in Glue Data Catalog)
 - Cross-batch deduplication strategy is source-dependent (merge key in the data contract).
 - Use Iceberg `MERGE INTO` for CDC patterns; conditional INSERT for append patterns.
 
-## 5. Idempotency
+## 5. Data Quality: DQDL (Glue Data Quality)
 
-- All pipelines MUST be idempotent — re-running a batch with the same data produces the same output.
-- Use Iceberg `MERGE INTO` or conditional INSERT for exactly-once semantics.
-- Glue job bookmarks or S3 event-driven triggers ensure no reprocessing of already-consumed files.
+- **MUST** compile data contract quality rules to DQDL syntax at generation time.
+- **MUST NOT** maintain custom Python validator classes — use `EvaluateDataQuality` transform.
+- **MUST** enable CloudWatch metrics publishing for every DQDL evaluation.
+- **MUST** route DQDL failures to `{table}_quarantine` Iceberg table.
+- **MUST** halt pipeline if quarantine rate exceeds contract threshold (default 5%).
+- See `steering/glue-data-quality.md` for full DQDL compilation reference.
 
 ## 6. Security Tagging
 
@@ -145,3 +149,44 @@ Every generated pipeline MUST include these components in this order:
 9. **Write to Bronze** — Append/MERGE to Iceberg table (Parquet, ZSTD, partitioned).
 10. **Emit Metrics** — Duration, rows_read, rows_valid, rows_quarantined, rows_written, status.
 11. **Update Watermark** — (JDBC only) Persist new watermark to DynamoDB.
+
+## 14. Intelligent Worker Sizing
+
+Replace static timeout/sizing values with calculated ones:
+
+```
+timeout_minutes = 10 (provisioning buffer)
+               + (estimated_volume_gb / throughput_per_dpu_gb_per_min)
+               × 1.2 (20% safety margin)
+
+For initial full loads: timeout × 3 (first run reads everything)
+For S3-sourced jobs (Landing → Raw): worker_count × 0.5
+  (S3 reads are ~2× faster and more parallelizable than JDBC reads)
+```
+
+| Volume per Batch | Worker Type | Workers | Base Timeout |
+|---|---|---|---|
+| < 1 GB | G.1X | 2 | 15 min |
+| 1–10 GB | G.1X | 5 | 30 min |
+| 10–50 GB | G.1X | 10 | 60 min |
+| > 50 GB | G.2X | 10 | 120 min |
+
+**Glue Flex Execution Class:**
+For non-time-sensitive batch jobs (SLA > 2 hours), default to Flex execution class for up to 35% cost reduction. Flex jobs start within 5 minutes (vs immediate for Standard).
+
+**Worker Type Rules:**
+- G.025X is ONLY valid for `gluestreaming` command type — auto-correct to G.1X for `glueetl`
+- G.4X and G.8X are for memory-intensive workloads (large joins, complex aggregations)
+- Validate worker type against job command type BEFORE creating the Glue job
+
+## 15. Pre-Deployment Validation (Mandatory)
+
+Before generating or deploying ANY pipeline, ALL checks in `steering/pre-deployment-validation.md` MUST pass:
+1. Connectivity (can we reach the source?)
+2. Credentials (secret exists, keys valid, not stale)
+3. Networking (SG self-reference, subnet routes, S3 VPC endpoint)
+4. IAM (roles have all required permissions)
+5. ASL (state machine definition valid)
+6. Worker Type (valid for this job command type)
+
+If ANY check fails → STOP. Do NOT generate infrastructure. Fix first, then retry.

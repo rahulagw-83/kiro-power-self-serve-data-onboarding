@@ -5,12 +5,18 @@
 This steering file governs the automatic detection of source schemas, data type inference,
 sensitivity classification, and schema evolution handling across all ingestion pipelines.
 
+**Two-layer context:** Schema inference samples data from the Landing layer (if already
+available) or directly from the source. The inferred schema drives the Raw/Bronze Iceberg
+table creation and the data contract DQDL rules. PII/PHI columns are tagged in Lake
+Formation at the Raw layer — they are NOT masked (masking belongs in Silver).
+
 The system must:
 - Auto-detect column names, types, nullability, and constraints from any supported source
 - Classify each column for sensitivity (PII, PHI, financial, public)
 - Version every schema as an immutable artifact
 - Detect drift between runs and route changes by severity
 - Never auto-apply breaking changes without human approval
+- Compile quality rules to DQDL syntax for Glue Data Quality
 
 ---
 

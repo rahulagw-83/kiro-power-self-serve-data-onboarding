@@ -1,23 +1,27 @@
 ---
 name: cost-estimation-and-optimization
 description: >-
-  Estimate pipeline costs before deployment, track actual spend per source, detect
-  cost anomalies, and recommend optimizations (right-sizing workers, adjusting
-  schedules, compacting tables). Triggers on: how much will this cost, pipeline cost,
-  cost estimate, optimize costs, reduce spend, cost anomaly, budget, DPU hours,
-  right-size workers. Do NOT use for deploying changes (use deploying-cdk-pipeline),
-  monitoring health (use monitoring-pipeline-health), or querying data (use
-  querying-data-lake).
-version: 1
-argument-hint: '[source-name|domain|''all''|''estimate'']'
+  Estimate pipeline costs before deployment using service-specific pricing (DMS, AppFlow,
+  Firehose, Glue, Transfer Family), show cost comparison between applicable services,
+  track actual spend per source, detect anomalies, and recommend optimizations
+  (right-sizing, Flex execution, schedule changes). Triggers on: how much will this
+  cost, pipeline cost, cost estimate, optimize costs, reduce spend, cost comparison,
+  DMS vs Glue, budget. Do NOT use for deploying (use deploying-cdk-pipeline),
+  monitoring health (use monitoring-pipeline-health), or querying (use querying-data-lake).
+version: 2
+argument-hint: '[source-name|domain|''all''|''compare'']'
 author: "Rahul Agarwal, Manish Choudhary"
 ---
 
 # Cost Estimation and Optimization
 
 Estimate, track, and optimize the cost of ingestion pipelines. Provides pre-deployment
-cost estimates, ongoing cost monitoring, anomaly detection, and actionable optimization
-recommendations.
+cost comparisons across applicable AWS services, ongoing cost monitoring, anomaly
+detection, and optimization recommendations.
+
+**Key principle:** Show cost comparison BEFORE the user commits to a tool. The right
+service is often 4-10× cheaper than defaulting to Glue JDBC. See
+`steering/source-tool-selection.md` for the cost comparison template.
 
 ## Philosophy
 
