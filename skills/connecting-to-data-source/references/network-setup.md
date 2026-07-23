@@ -118,18 +118,28 @@ telnet <source-host> <source-port>
 
 If EC2 can't reach the source, neither will Glue. Fix routing first.
 
-## CDK Integration
+## Terraform Integration
 
-When deploying connections via the platform's CDK stack, ensure `PhysicalConnectionRequirements` values are sourced from SSM Parameter Store or CDK context rather than hardcoded:
+When deploying connections via Terraform, reference VPC config from variables or SSM:
 
-```python
-# In cdk/constructs/glue_job.py
-subnet_id = ssm.StringParameter.value_from_lookup(
-    self, "/data-platform/glue-subnet-id"
-)
-security_group_id = ssm.StringParameter.value_from_lookup(
-    self, "/data-platform/glue-security-group-id"
-)
+```hcl
+data "aws_ssm_parameter" "glue_subnet" {
+  name = "/data-platform/glue-subnet-id"
+}
+
+data "aws_ssm_parameter" "glue_sg" {
+  name = "/data-platform/glue-security-group-id"
+}
+
+resource "aws_glue_connection" "source" {
+  name = var.connection_name
+
+  physical_connection_requirements {
+    subnet_id           = data.aws_ssm_parameter.glue_subnet.value
+    security_group_id_list = [data.aws_ssm_parameter.glue_sg.value]
+    availability_zone   = var.availability_zone
+  }
+}
 ```
 
-This ensures environment promotion (dev → test → prod) uses the correct VPC configuration for each environment.
+This ensures environment promotion (dev → prod) uses the correct VPC configuration.

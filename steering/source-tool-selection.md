@@ -19,14 +19,14 @@ This guide determines which AWS ingestion service to use for each source type.
 | Aurora MySQL/PostgreSQL → Redshift only | Yes | No | **Aurora Zero-ETL** | Native (no S3 Landing) |
 | Aurora MySQL/PostgreSQL (snapshots) | No | No | **Aurora S3 Export** | S3 Parquet |
 | Any RDS / Aurora / self-managed DB | Yes | No | **AWS DMS** (ongoing CDC) | S3 Parquet via DMS |
-| Any RDS / Aurora / self-managed DB | Yes | Yes | **AWS DMS** → Landing → **Glue** | DMS → S3 → Glue |
-| Any RDS / Aurora / self-managed DB | No (full load only) | Yes | **AWS DMS** (full load) → Landing → **Glue** | DMS → S3 → Glue |
+| Any RDS / Aurora / self-managed DB | Yes | N/A | **AWS DMS** (ongoing CDC) | DMS → S3 Landing |
+| Any RDS / Aurora / self-managed DB | No (full load only) | N/A | **AWS DMS** (full load) | DMS → S3 Landing |
 | Salesforce | Any | No | **Amazon AppFlow** | S3 Parquet |
 | SAP, ServiceNow, HubSpot, Zendesk, Workday, Marketo + 45 more | Any | No | **Amazon AppFlow** | S3 Parquet |
 | SaaS not in AppFlow connector list | Any | Yes | Custom **Glue** (REST API) | Glue → S3 |
 | Kinesis Data Streams | Real-time | No | **Kinesis Data Firehose** | S3 Parquet (native JSON→Parquet) |
 | Amazon MSK (Kafka) | Real-time | No | **Firehose** (MSK connector) | S3 Parquet |
-| Kinesis / MSK (transforms needed) | Real-time | Yes | **Glue Streaming ETL** | Glue → S3 Iceberg |
+| Kinesis / MSK (transforms needed) | Real-time | Yes | **Glue Streaming ETL** → S3 | Glue → S3 Landing |
 | S3 file drops (already in S3) | N/A | Yes | S3 Event → **Glue** | Already in Landing |
 | SFTP / FTP / FTPS partner files | N/A | Any | **AWS Transfer Family** → S3 | Transfer Family |
 | On-prem NFS / SMB / HDFS shares | Any | Any | **AWS DataSync** → S3 | DataSync |
@@ -113,7 +113,7 @@ Use Glue with a JDBC connection ONLY when ALL of these are true:
 3. No simpler service fits (DMS, Aurora S3 Export, Aurora Zero-ETL)
 4. The volume justifies the cost and complexity
 
-**Even then:** prefer DMS → Landing → Glue (reads from S3) over Glue reading directly from the database via JDBC.
+**Even then:** prefer DMS → S3 Landing over Glue reading directly from the database via JDBC.
 
 ---
 

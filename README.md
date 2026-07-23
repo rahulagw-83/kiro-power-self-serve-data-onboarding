@@ -1,18 +1,25 @@
 # Self-Serve Data Onboarding — Kiro Power
 
-A production-grade [Kiro Power](https://kiro.dev) for building and operating self-serve data ingestion pipelines on AWS. Uses the **right AWS service per source type** with a **two-layer Landing+Raw architecture** to reduce source onboarding from 2-4 weeks to under 1 hour.
+A [Kiro Power](https://kiro.dev) that moves data from any source to S3 Landing using the right AWS service, then profiles it. No transforms, no schema enforcement, no masking — just land the data and describe it.
 
 ## What It Does
 
-This Power turns Kiro into a data platform engineer that can:
+1. **Select the right tool** — DMS for databases, AppFlow for SaaS, Firehose for streaming, Transfer Family for SFTP, DataSync for on-prem
+2. **Land data in S3 as-is** — no transforms, no audit columns, no type casting
+3. **Profile the landed data** — column types, PII candidates, statistics, recommendations
+4. **Publish a report** — JSON (machine-readable) + Markdown (human-readable)
 
-- **Select the right tool** — DMS for databases, AppFlow for SaaS, Firehose for streaming, Transfer Family for SFTP. Never defaults to Glue JDBC.
-- **Implement two layers** — Landing (fast, cheap, raw S3 copy) → Raw/Bronze (trusted, governed, Iceberg with DQDL quality)
-- **Validate before deploying** — mandatory pre-deployment checks (connectivity, credentials, SG rules, IAM, ASL) before any code is generated
-- **Show costs upfront** — cost comparison between applicable services before the user commits
-- **Enforce quality via DQDL** — data contract rules compile to AWS Glue Data Quality (no custom validator code)
-- **Auto-remediate failures** — error taxonomy maps 16+ known failure patterns to automatic fixes
-- **Deploy with your IaC** — CDK, Terraform (version-pinned), or CloudFormation — your choice
+## What It Does NOT Do
+
+- Medallion architecture (Bronze/Silver/Gold)
+- Data transformation
+- Schema enforcement or evolution
+- PII masking or redaction
+- Quality gates that block pipelines
+- Data contracts as enforcement
+- Iceberg tables or deduplication
+
+Those are downstream concerns. The profiling report gives those teams what they need.
 
 ## Architecture
 
@@ -20,32 +27,27 @@ This Power turns Kiro into a data platform engineer that can:
 Source System
      │
      ▼  (DMS / AppFlow / Firehose / Transfer Family / DataSync)
-┌──────────────────────────────────────────────┐
-│  LANDING LAYER — Plain S3, no transforms     │
-│  Partition: year/month/day | Retention: configurable  │
-└──────────────────────────────────────────────┘
-     │  S3 Event → EventBridge → Glue
-     ▼
-┌──────────────────────────────────────────────┐
-│  RAW (BRONZE) — S3 + Iceberg                 │
-│  Audit cols + DQDL quality + dedup + tags    │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  S3 LANDING — data arrives exactly as-is             │
+│  Partitioned: year/month/day | Retention: configurable│
+└──────────────────────────────────────────────────────┘
+     │
+     ▼  (AWS Glue DataBrew)
+┌──────────────────────────────────────────────────────┐
+│  PROFILING REPORT — stats, PII candidates, recs      │
+└──────────────────────────────────────────────────────┘
 ```
 
-**Key insight:** Glue ETL reads from Landing S3 only — never directly from the source. This eliminates JDBC timeouts, SG complexity, and cold-start issues while cutting worker count by 50%.
+## Supported Sources
 
-## Supported Sources and Recommended Tools
-
-| Source | Recommended Service | Cost vs Glue JDBC |
+| Source | Service | Cost vs Glue JDBC |
 |---|---|---|
 | RDS / Aurora / Oracle / SQL Server (CDC) | **AWS DMS** | 4× cheaper |
-| Aurora → Redshift | **Aurora Zero-ETL** | Free (native) |
-| Salesforce, SAP, HubSpot, ServiceNow + 45 more | **Amazon AppFlow** | 10× cheaper |
-| Kinesis / Kafka / MSK (no transforms) | **Kinesis Data Firehose** | 20× cheaper |
-| SFTP / FTP partner file drops | **AWS Transfer Family** | Purpose-built |
-| On-premises file shares (NFS, SMB, HDFS) | **AWS DataSync** | Purpose-built |
-| S3 file drops (CSV, JSON, Parquet) | **EventBridge → Glue** | Already landed |
-| Cross-account data sharing | **Lake Formation** | No data movement |
+| Salesforce, SAP, HubSpot + 45 more | **Amazon AppFlow** | 10× cheaper |
+| Kinesis / Kafka (no transforms) | **Kinesis Firehose** | 20× cheaper |
+| SFTP / FTP partner files | **AWS Transfer Family** | Purpose-built |
+| On-prem file shares | **AWS DataSync** | Purpose-built |
+| Already in S3 | **EventBridge** (detect) | Free |
 
 ## Installation
 
@@ -53,42 +55,31 @@ Source System
 git clone https://github.com/rahulagw-83/kiro-power-self-serve-data-onboarding.git
 ```
 
-Or install as a Kiro Power via the Kiro Power panel.
-
 ## Structure
 
 ```
 self-serve-data-onboarding/
-├── POWER.md                    # Main power definition (start here)
-├── steering/                   # 19 deep-knowledge steering files
-│   ├── onboarding-workflow.md  # Master 16-step workflow (6 phases)
-│   ├── landing-layer.md        # Landing layer design + service configs
-│   ├── source-tool-selection.md # Right tool per source + cost comparison
-│   ├── pre-deployment-validation.md # 6-check mandatory validation
-│   ├── glue-data-quality.md    # DQDL rule compilation from contracts
-│   ├── ingestion-standards.md  # Non-negotiable rules + sizing + DQDL
+├── POWER.md                    # Main power definition
+├── steering/                   # 9 steering files
+│   ├── onboarding-workflow.md  # Discover → validate → deploy → profile
+│   ├── source-tool-selection.md # Right tool per source type
+│   ├── landing-layer.md        # S3 paths, retention, partitioning
+│   ├── pre-deployment-validation.md # 7 mandatory checks
+│   ├── data-profiling.md       # DataBrew setup, PII patterns, report spec
+│   ├── connection-setup.md     # Glue/DMS connections
+│   ├── observability.md        # Did data arrive? Is it fresh?
 │   ├── troubleshooting.md      # Error taxonomy + auto-remediation
-│   ├── schema-inference.md     # Type detection + PII classification
-│   ├── data-contracts.md       # Contract authoring reference
-│   ├── cdk-infrastructure.md   # CDK stack patterns
-│   ├── observability.md        # Monitoring + alerting
-│   ├── well-architected.md     # 52 rules across 6 WA pillars
-│   └── ...
-├── skills/                     # 13 executable skills
-│   ├── ingesting-into-data-lake/       # Landing+Raw two-layer execution
-│   ├── connecting-to-data-source/      # Glue connection setup + test
-│   ├── schema-inference-and-classification/
-│   ├── data-contract-authoring/
-│   ├── deploying-cdk-pipeline/         # CDK/Terraform/CFN deploy + promote
-│   ├── monitoring-pipeline-health/     # Landing + Raw health checks
-│   ├── cost-estimation-and-optimization/ # Service cost comparison
-│   ├── managing-schema-evolution/
-│   ├── decommissioning-data-source/
-│   ├── creating-data-lake-table/
-│   ├── querying-data-lake/
+│   └── security-and-access.md  # IAM, Secrets Manager, networking
+├── skills/                     # 7 executable skills
+│   ├── connecting-to-data-source/
+│   ├── data-profiling/
+│   ├── exploring-data-catalog/
 │   ├── finding-data-lake-assets/
-│   └── exploring-data-catalog/
-├── hooks/                      # Pre/post-ingestion quality gates
+│   ├── monitoring-pipeline-health/
+│   ├── cost-estimation-and-optimization/
+│   └── decommissioning-data-source/
+├── hooks/                      # Pre/post-ingestion hooks
+├── terraform/                  # (generated per source, not stored here)
 ├── LICENSE                     # Apache-2.0
 └── .gitignore
 ```
@@ -99,35 +90,17 @@ Just describe what you need:
 
 - *"Onboard our Aurora MySQL orders database"*
 - *"Set up daily Salesforce contacts sync"*
-- *"We get vendor CSV files via SFTP — automate it"*
-- *"Stream Kafka events into the data lake"*
-- *"What would DMS cost vs Glue JDBC for our 5 tables?"*
+- *"We get vendor CSVs via SFTP"*
+- *"Stream Kafka events to S3"*
+- *"Profile the data that landed yesterday"*
 
-The Power asks 7 discovery questions (1-2 per turn), shows a cost comparison, confirms the approach, runs pre-deployment validation, then generates and deploys.
+The Power asks 3-4 questions, recommends a service with cost estimate, validates connectivity, and deploys via Terraform.
 
-## Key Principles
+## IaC
 
-1. **Right tool per source** — DMS for databases, AppFlow for SaaS, Firehose for streaming
-2. **Two layers: Landing + Raw** — Landing gets data fast; Raw makes it trustworthy
-3. **Validate before generating** — 6 mandatory checks before any code is produced
-4. **DQDL over custom code** — quality rules from contracts, zero maintenance
-5. **Cost comparison upfront** — never deploy without knowing the price
-6. **Error taxonomy** — known failures auto-remediate, unknown failures escalate
-7. **Glue reads S3 only** — never from source directly (eliminates JDBC pain)
+**Terraform only.** No CDK. No CloudFormation. One tool, consistent structure.
 
-## IaC Support
-
-| Tool | Support Level |
-|---|---|
-| AWS CDK (Python) | Primary — full template library |
-| Terraform (HCL) | Full — modules, version pinning, state locking |
-| CloudFormation (YAML) | Full — native AWS templates |
-
-Terraform users can pin to any version their org requires (1.3, 1.5, latest).
-
-## AWS Well-Architected Compliance
-
-Every generated pipeline enforces **52 rules** across all 6 pillars automatically.
+Terraform version: ask your org's pinned version or use latest stable.
 
 ## License
 

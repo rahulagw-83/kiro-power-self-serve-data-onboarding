@@ -285,7 +285,7 @@ source:
 
 The pipeline generator uses `glue_connection_name` to:
 - Configure the Glue job's `--connections` argument
-- Look up VPC settings for CDK stack generation
+- Look up VPC settings for Terraform module generation
 - Validate connectivity before first run
 
 ---

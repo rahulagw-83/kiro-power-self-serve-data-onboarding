@@ -149,15 +149,11 @@ Enumerate API calls made by the generated state machine and Glue job, then verif
 - `sns:Publish` (for alerts)
 - `logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`
 
-**Glue job role needs:**
-- `s3:GetObject`, `s3:PutObject`, `s3:ListBucket` on Landing and Raw buckets
-- `s3:DeleteObject` on Raw bucket (for Iceberg maintenance)
-- `glue:GetTable`, `glue:GetDatabase`, `glue:UpdateTable` (for schema evolution)
-- `glue:GetConnection` (if JDBC connection used)
-- `secretsmanager:GetSecretValue` on the source secret
+**Ingestion service role needs (DMS/AppFlow/Firehose/Transfer Family):**
+- `s3:PutObject`, `s3:ListBucket` on Landing bucket
+- `secretsmanager:GetSecretValue` on the source secret (if applicable)
 - `cloudwatch:PutMetricData` (for custom metrics)
-- `lakeformation:GetDataAccess` (for Lake Formation governed tables)
-- `glue:GetDataQualityRuleRecommendation`, `glue:GetDataQualityResult` (for DQDL)
+- Service-specific permissions (e.g., `dms:*` for DMS role, `appflow:*` for AppFlow)
 
 ```bash
 # Simulate role permissions
@@ -206,7 +202,7 @@ After all checks complete, present a summary:
 Pre-Deployment Validation Report
 ═══════════════════════════════════
 
-Source: aurora-orders (DMS CDC → S3 Landing → Glue Raw)
+Source: aurora-orders (DMS CDC → S3 Landing)
 Environment: dev
 
 ✅ Connectivity: DMS endpoint reachable, test-connection passed
