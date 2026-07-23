@@ -342,12 +342,14 @@ Known failure patterns with auto-remediation:
 | Skill | Use When |
 |---|---|
 | **connecting-to-data-source** | Setting up Glue/DMS connections, testing connectivity |
+| **provisioning-landing-pipeline** | Starting the ingestion service (DMS task, AppFlow flow, Firehose stream), verifying first data lands in S3 |
+| **deploying-terraform** | Running terraform init/plan/apply/destroy, post-deploy verification, environment promotion |
 | **data-profiling** | Running profiling jobs, generating reports, detecting PII candidates |
 | **exploring-data-catalog** | Auditing what exists in Glue Data Catalog |
 | **finding-data-lake-assets** | Resolving table/dataset references by business name |
 | **monitoring-pipeline-health** | Checking: did data arrive? Is it fresh? Did the job succeed? |
 | **cost-estimation-and-optimization** | Service cost comparison, right-sizing, optimization |
-| **decommissioning-data-source** | Retiring a source: disable schedule, archive, notify |
+| **decommissioning-data-source** | Retiring a source: disable schedule, destroy infra, notify |
 
 ---
 

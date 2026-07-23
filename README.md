@@ -70,8 +70,10 @@ self-serve-data-onboarding/
 │   ├── observability.md        # Did data arrive? Is it fresh?
 │   ├── troubleshooting.md      # Error taxonomy + auto-remediation
 │   └── security-and-access.md  # IAM, Secrets Manager, networking
-├── skills/                     # 7 executable skills
+├── skills/                     # 9 executable skills
 │   ├── connecting-to-data-source/
+│   ├── provisioning-landing-pipeline/
+│   ├── deploying-terraform/
 │   ├── data-profiling/
 │   ├── exploring-data-catalog/
 │   ├── finding-data-lake-assets/
