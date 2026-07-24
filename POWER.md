@@ -683,10 +683,15 @@ Known failure patterns with auto-remediation:
 
 ---
 
-## Support & Legal
+## License and Support
 
-- **License**: Apache-2.0 (see [LICENSE](LICENSE))
+This power is licensed under **Apache-2.0** (SPDX: `Apache-2.0`).
+
+- [Privacy Policy](https://github.com/rahulagw-83/kiro-power-self-serve-data-onboarding/blob/main/LICENSE)
+- [Support](https://github.com/rahulagw-83/kiro-power-self-serve-data-onboarding/issues)
 - **Authors**: Rahul Agarwal, Manish Choudhary
-- **Issues**: Report via GitHub Issues
+- **Contact**: agarwalrahul35031@gmail.com
+
+This power does not use any MCP servers.
 
 **Disclaimer:** This power provides technical guidance for landing data on AWS. It does not provide legal, regulatory, or compliance advice. PII detection in profiling reports is pattern-based and should be validated by qualified personnel.
