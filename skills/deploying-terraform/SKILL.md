@@ -32,7 +32,32 @@ Find the generated Terraform in the workspace:
 
 If not found, inform user that Terraform files need to be generated first.
 
-### 2. Select Environment
+### 2. Existing Resource Check
+
+Before planning, verify what already exists to prevent duplicates:
+
+```bash
+# Check if resources in the TF state already exist in AWS
+terraform state list 2>/dev/null
+
+# If fresh deployment (no state), scan for potential conflicts:
+# - S3 bucket name collision
+aws s3api head-bucket --bucket {proposed_bucket_name} 2>&1
+
+# - DMS instance name collision
+aws dms describe-replication-instances \
+  --filters Name=replication-instance-id,Values={proposed_instance_id} 2>&1
+
+# - IAM role name collision
+aws iam get-role --role-name {proposed_role_name} 2>&1
+```
+
+If conflicts found, present options:
+- Import existing resource into Terraform state (`terraform import`)
+- Use a different name (adjust variables)
+- Skip creation (reference existing resource via data source)
+
+### 3. Select Environment
 
 Determine target environment from user or context:
 - `dev` → uses `environments/dev.tfvars`

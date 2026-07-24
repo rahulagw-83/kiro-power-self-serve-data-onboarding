@@ -87,22 +87,150 @@ The agent asks 1-2 questions per turn:
 **Turn 3:** "Approximate volume per batch?"
 
 → Agent recommends a specific AWS service and explains why (one sentence).
-→ User confirms or asks for alternative.
+→ Shows cost comparison. User confirms or asks for alternative.
 
-**Turn 4:** Collect connection details for the chosen service:
+**Turn 4 — Naming, Tags, and Existing Resources:**
+
+Ask once, remember for session:
+
+> "A few setup questions before I generate anything:
+>
+> 1. **Naming convention** — Does your org have a pattern for AWS resource names?
+>    (e.g., `{env}-{team}-{source}-{purpose}`, or a required prefix like `mycompany-`)
+>    Default if none: `{env}-{source_name}-{service}` (e.g., `prod-aurora-orders-dms-task`)
+>
+> 2. **Required tags** — Any mandatory tags? (e.g., team, cost-center, project, environment)
+>
+> 3. **Let me check what already exists in your account..."
+
+Then run the **Existing Resource Scan** (see below).
+
+**Turn 5:** Collect connection details for the chosen service:
 - Database: endpoint, port, database name, credentials location in Secrets Manager
 - SaaS: platform name, auth type (OAuth / API key), connector profile
 - Streaming: stream/topic ARN, region
 - Files: bucket/prefix or SFTP host, format, delivery mechanism
 - On-prem: source path, agent location, bandwidth estimate
 
-**Turn 5:** "Do you want a profiling report after data lands?" (recommended)
+**Turn 6:** "Do you want a profiling report after data lands?" (recommended)
 
 → Run pre-deployment validation (connectivity, credentials, networking, IAM)
 → Generate Terraform for Landing + Profiling
 → Deploy
 
 **Not asked** (out of scope): transforms, masking, quality rules, schema enforcement, data contracts, evolution policies, approval workflows.
+
+---
+
+## Existing Resource Scan (Before Generating Terraform)
+
+Before creating ANY resource, scan the account for reusable infrastructure:
+
+```bash
+# DMS replication instances
+aws dms describe-replication-instances \
+  --query "ReplicationInstances[].{Id:ReplicationInstanceIdentifier,Class:ReplicationInstanceClass,Status:ReplicationInstanceStatus,Tasks:length(ReplicationTasks||'[]')}"
+
+# S3 buckets with "landing" or "data" in name
+aws s3api list-buckets \
+  --query "Buckets[?contains(Name,'landing') || contains(Name,'data')].Name"
+
+# AppFlow connector profiles
+aws appflow describe-connector-profiles \
+  --query "ConnectorProfileDetailList[].{Name:ConnectorProfileName,Type:ConnectorType}"
+
+# Transfer Family servers
+aws transfer list-servers \
+  --query "Servers[].{Id:ServerId,State:State,Endpoint:EndpointType}"
+
+# DataSync agents
+aws datasync list-agents \
+  --query "Agents[].{Arn:AgentArn,Name:Name,Status:Status}"
+
+# Existing DMS tasks (check for duplicate source)
+aws dms describe-replication-tasks \
+  --query "ReplicationTasks[].{Id:ReplicationTaskIdentifier,Source:SourceEndpointArn,Status:Status}"
+
+# Firehose delivery streams
+aws firehose list-delivery-streams --query "DeliveryStreamNames"
+```
+
+**Present findings to user:**
+
+```
+Existing Resources Found
+════════════════════════
+
+S3 Buckets:
+  ✅ "data-landing-prod" exists — use this? Or create new?
+
+DMS Instances:
+  ✅ "dms-prod-01" (t3.medium, AVAILABLE, 2 tasks running)
+     → Capacity OK for +1 task. Reuse? (saves ~$75/month)
+  ❌ No existing task replicates "aurora-orders" — safe to create
+
+AppFlow Profiles:
+  ✅ "salesforce-prod" exists (Salesforce connector)
+     → (not relevant for database source)
+
+Transfer Family: None found
+DataBrew: No existing dataset for this source
+
+Recommendation:
+  • Reuse bucket: data-landing-prod
+  • Reuse DMS instance: dms-prod-01
+  • Create new: DMS task, DMS endpoints, CloudWatch alarms, DataBrew job
+
+Confirm? Or adjust?
+```
+
+**Rules:**
+- MUST scan before generating Terraform
+- MUST offer to reuse existing DMS instances (saves significant cost)
+- MUST offer to reuse existing S3 buckets (landing data should be centralized)
+- MUST check for duplicate DMS tasks targeting the same source
+- MUST warn if source is already being replicated
+- If no existing resources → inform user, proceed with full creation
+
+---
+
+## Naming Convention
+
+Ask once in Turn 4. Apply to ALL generated resources consistently.
+
+**Default pattern (if user has no preference):**
+```
+{env}-{source_name}-{resource_type}
+```
+
+Examples with default:
+- DMS instance: `prod-dms-shared-01` (shared, reused)
+- DMS task: `prod-aurora-orders-cdc-task`
+- DMS source endpoint: `prod-aurora-orders-source`
+- DMS S3 target endpoint: `prod-aurora-orders-s3-target`
+- S3 prefix: `sales/aurora-orders/orders/`
+- CloudWatch alarm: `prod-aurora-orders-pipeline-failure`
+- DataBrew job: `prod-aurora-orders-profile`
+- IAM role: `prod-aurora-orders-dms-role`
+
+**Custom pattern examples:**
+- `{company}-{env}-{team}-{source}-{purpose}` → `acme-prod-data-aurora-orders-cdc`
+- `{project}/{env}/{source}` → `data-platform/prod/aurora-orders`
+
+**Tags applied to ALL resources:**
+
+```hcl
+locals {
+  common_tags = {
+    Environment = var.environment
+    Source      = var.source_name
+    Team        = var.team           # from user input
+    CostCenter  = var.cost_center    # from user input
+    ManagedBy   = "terraform"
+    CreatedBy   = "kiro-power-self-serve-data-onboarding"
+  }
+}
+```
 
 ---
 

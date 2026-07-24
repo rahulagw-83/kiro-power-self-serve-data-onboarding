@@ -25,10 +25,33 @@ from source directly. Just the purpose-built AWS service doing what it was desig
 ## When This Skill Runs
 
 After Terraform has been applied (infrastructure exists), this skill:
-1. Starts the ingestion service (initial load or ongoing CDC)
-2. Waits for first data to arrive in S3
-3. Verifies the landing path has files
-4. Confirms the pipeline is operational
+1. Checks if the service is already running (avoid double-start)
+2. Starts the ingestion service (initial load or ongoing CDC)
+3. Waits for first data to arrive in S3
+4. Verifies the landing path has files
+5. Confirms the pipeline is operational
+
+## Pre-Start Checks
+
+Before starting any service, verify it's not already running:
+
+```bash
+# DMS — check task isn't already replicating
+aws dms describe-replication-tasks \
+  --filters Name=replication-task-id,Values={task_id} \
+  --query "ReplicationTasks[0].Status"
+# If "running" → already active, skip start, just verify data
+
+# AppFlow — check last execution
+aws appflow describe-flow-execution-records --flow-name {name} --max-results 1
+# If recent successful run → skip, just verify data
+
+# Firehose — check stream status
+aws firehose describe-delivery-stream --delivery-stream-name {name}
+# If ACTIVE → already delivering, just verify data arrives
+```
+
+If service is already running and data is flowing → skip to verification. Don't double-start.
 
 ## Workflow by Service
 

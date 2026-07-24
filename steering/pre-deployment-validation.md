@@ -15,6 +15,7 @@ If any check fails, stop immediately — do not proceed to code generation or de
 ## Validation Sequence
 
 ```
+0. Existing Resource Scan      → What already exists? Reuse or create?
 1. Connectivity Validation     → Can we reach the source?
 2. Credential Validation       → Are credentials correct and fresh?
 3. Networking Validation       → Are SGs, subnets, and endpoints configured?
@@ -23,7 +24,44 @@ If any check fails, stop immediately — do not proceed to code generation or de
 6. Worker Type Validation      → Is the Glue worker type valid for this job command?
 ```
 
-All 6 checks MUST pass before proceeding.
+All checks MUST pass before proceeding.
+
+---
+
+## 0. Existing Resource Scan
+
+Before creating anything, check what already exists:
+
+```bash
+# DMS instances (reuse saves ~$75/month)
+aws dms describe-replication-instances \
+  --query "ReplicationInstances[].{Id:ReplicationInstanceIdentifier,Class:ReplicationInstanceClass,Status:ReplicationInstanceStatus}"
+
+# DMS tasks (detect duplicates targeting same source)
+aws dms describe-replication-tasks \
+  --query "ReplicationTasks[].{Id:ReplicationTaskIdentifier,Source:SourceEndpointArn,Status:Status}"
+
+# S3 buckets with landing/data pattern
+aws s3api list-buckets --query "Buckets[?contains(Name,'landing') || contains(Name,'data')].Name"
+
+# AppFlow connector profiles
+aws appflow describe-connector-profiles --query "ConnectorProfileDetailList[].{Name:ConnectorProfileName,Type:ConnectorType}"
+
+# Transfer Family servers
+aws transfer list-servers --query "Servers[].{Id:ServerId,State:State}"
+
+# Firehose streams
+aws firehose list-delivery-streams --query "DeliveryStreamNames"
+```
+
+**Decision logic:**
+- Existing DMS instance with capacity → offer to reuse (add task to existing instance)
+- Existing S3 landing bucket → reuse (different prefix per source)
+- Existing AppFlow profile for same SaaS → reuse (don't create duplicate)
+- Existing DMS task for same source → WARN (duplicate onboarding detected)
+- No existing resources → proceed with full creation
+
+**Present findings to user and get confirmation before generating Terraform.**
 
 ---
 
