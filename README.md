@@ -29,7 +29,7 @@ Source System
      ▼  (DMS / AppFlow / Firehose / Transfer Family / DataSync)
 ┌──────────────────────────────────────────────────────┐
 │  S3 LANDING — data arrives exactly as-is             │
-│  Partitioned: year/month/day | Retention: configurable│
+│  Partitioned: year/month/day |Retention: configurable│
 └──────────────────────────────────────────────────────┘
      │
      ▼  (AWS Glue DataBrew)
