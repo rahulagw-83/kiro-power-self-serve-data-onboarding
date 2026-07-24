@@ -80,7 +80,7 @@ Source System
 
 The agent asks 1-2 questions per turn:
 
-**Turn 1:** "What kind of data source?" (database / SaaS / streaming / files / on-prem)
+**Turn 1:** "What kind of data source?" (database / SaaS / streaming / files / on-prem / **public API**)
 
 **Turn 2:** "One-time load or recurring sync? If recurring, what freshness?" (real-time / hourly / daily / weekly)
 
@@ -111,6 +111,7 @@ Then run the **Existing Resource Scan** (see below).
 - Streaming: stream/topic ARN, region
 - Files: bucket/prefix or SFTP host, format, delivery mechanism
 - On-prem: source path, agent location, bandwidth estimate
+- **Public API: base URL, auth method (API key / OAuth2 / none), pagination style (cursor / offset / token), rate limit, response format (JSON / XML)**
 
 **Turn 6:** "Do you want a profiling report after data lands?" (recommended)
 
@@ -246,6 +247,8 @@ locals {
 | Aurora (snapshot export) | One-time/periodic | **Aurora S3 Export** | Cheapest (~$0.01/GB) |
 | Salesforce, SAP, HubSpot, ServiceNow, Zendesk, Workday + 45 more | Any | **Amazon AppFlow** | 50+ native connectors, no code |
 | SaaS not in AppFlow | Any | Custom Lambda or Glue REST | Last resort for unsupported platforms |
+| **Public/External REST APIs** (EV data, weather, govt open data, market data) | Scheduled poll | **Lambda + EventBridge Schedule** | Cheapest, serverless, handles auth + pagination |
+| **Public APIs (heavy pagination or > 15 min)** | Scheduled poll | **Step Functions + Lambda** | Orchestrates multi-step: auth → paginate → store |
 | Kinesis Data Streams / MSK Kafka | Real-time | **Kinesis Data Firehose** | Zero code, JSON→Parquet native |
 | SFTP/FTP partner file drops | Batch | **AWS Transfer Family** | Managed SFTP server → S3 |
 | Already in S3 | N/A | **EventBridge** (detect arrival) | Just trigger profiling |

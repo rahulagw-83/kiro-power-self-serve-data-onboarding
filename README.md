@@ -45,6 +45,7 @@ Source System
 | RDS / Aurora / Oracle / SQL Server (CDC) | **AWS DMS** | 4× cheaper |
 | Salesforce, SAP, HubSpot + 45 more | **Amazon AppFlow** | 10× cheaper |
 | Kinesis / Kafka (no transforms) | **Kinesis Firehose** | 20× cheaper |
+| Public/External REST APIs | **Lambda + EventBridge** | Serverless, ~$1/month |
 | SFTP / FTP partner files | **AWS Transfer Family** | Purpose-built |
 | On-prem file shares | **AWS DataSync** | Purpose-built |
 | Already in S3 | **EventBridge** (detect) | Free |

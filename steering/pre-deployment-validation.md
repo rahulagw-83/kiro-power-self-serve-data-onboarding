@@ -74,6 +74,7 @@ aws firehose list-delivery-streams --query "DeliveryStreamNames"
 | DMS endpoint | Reachable | `aws dms test-connection --replication-instance-arn {arn} --endpoint-arn {arn}` |
 | AppFlow connector | OAuth valid | `aws appflow describe-connector-profiles --connector-profile-names {name}` |
 | Transfer Family | Server active | `aws transfer describe-server --server-id {id}` + check State=ONLINE |
+| **Public/External API** | Endpoint returns 200 | `curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer {key}" {base_url}` |
 
 **On failure:** Stop. Present the specific error. Do NOT generate infrastructure.
 

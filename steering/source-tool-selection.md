@@ -38,6 +38,129 @@ This guide determines which AWS ingestion service to use for each source type.
 | Snowflake | Any | Yes | Glue **SNOWFLAKE** connector | Glue → S3 |
 | BigQuery | Any | Yes | Glue **BIGQUERY** connector | Glue → S3 |
 | DynamoDB | Any | No | **DynamoDB S3 Export** | Native S3 Export |
+| **Public/External REST APIs** (simple, < 15 min) | Scheduled | N/A | **Lambda + EventBridge Schedule** | Lambda → S3 |
+| **Public APIs** (heavy pagination, multi-step auth) | Scheduled | N/A | **Step Functions + Lambda** | SFN → Lambda → S3 |
+| **Public APIs** (large volume, > 15 min pull) | Scheduled | N/A | **ECS Fargate Scheduled Task** | Fargate → S3 |
+
+---
+
+## Public / External REST API Pattern
+
+For sources like EV charging data, weather APIs, government open data, market feeds,
+geolocation APIs — where there's no managed AWS connector.
+
+### Decision Tree
+
+```
+Is the API call simple (single GET, < 1000 records)?
+  → YES: Lambda + EventBridge Schedule (cheapest)
+  
+Does it require pagination (cursor/offset/token, multiple pages)?
+  → YES, < 15 min total: Lambda with pagination loop
+  → YES, > 15 min total: Step Functions + Lambda (per-page)
+  
+Does it require > 15 min continuous execution?
+  → YES: ECS Fargate Scheduled Task
+```
+
+### Lambda + EventBridge Pattern (Default)
+
+**Terraform generates:**
+- Lambda function (Python, requests library via layer)
+- EventBridge Scheduler rule (cron or rate)
+- IAM role (S3 PutObject + Secrets Manager GetSecretValue)
+- Secrets Manager secret (API key or OAuth credentials)
+- S3 landing path convention
+
+**Lambda template:**
+```python
+import json, boto3, urllib3
+from datetime import datetime
+
+http = urllib3.PoolManager()
+s3 = boto3.client("s3")
+secrets = boto3.client("secretsmanager")
+
+def handler(event, context):
+    # Get API credentials from Secrets Manager
+    secret = json.loads(
+        secrets.get_secret_value(SecretId="{secret_name}")["SecretString"]
+    )
+    
+    # Call the API
+    response = http.request(
+        "GET",
+        "{api_base_url}/{endpoint}",
+        headers={"Authorization": f"Bearer {secret['api_key']}"},
+        fields={"limit": "1000"}
+    )
+    data = json.loads(response.data)
+    
+    # Write to S3 Landing (partitioned by date)
+    now = datetime.utcnow()
+    key = (
+        f"{domain}/{source_name}/"
+        f"year={now.year}/month={now.month:02d}/day={now.day:02d}/"
+        f"{source_name}_{now.strftime('%Y%m%dT%H%M%S')}.json"
+    )
+    
+    s3.put_object(
+        Bucket="{landing_bucket}",
+        Key=key,
+        Body=json.dumps(data),
+        ContentType="application/json"
+    )
+    
+    return {"status": "success", "records": len(data), "key": key}
+```
+
+### Step Functions + Lambda Pattern (Paginated APIs)
+
+For APIs that return paginated results (cursor, next_token, offset):
+
+```json
+{
+  "StartAt": "FetchPage",
+  "States": {
+    "FetchPage": {
+      "Type": "Task",
+      "Resource": "{lambda_arn}",
+      "Parameters": {
+        "cursor.$": "$.next_cursor",
+        "page.$": "$.page_number"
+      },
+      "ResultPath": "$.result",
+      "Next": "CheckMorePages"
+    },
+    "CheckMorePages": {
+      "Type": "Choice",
+      "Choices": [{
+        "Variable": "$.result.has_more",
+        "BooleanEquals": true,
+        "Next": "FetchPage"
+      }],
+      "Default": "Done"
+    },
+    "Done": {"Type": "Succeed"}
+  }
+}
+```
+
+### Cost Estimates
+
+| Approach | Monthly Cost (daily pull, ~1 MB/call) | Monthly Cost (hourly, ~10 MB/call) |
+|---|---|---|
+| Lambda + EventBridge | ~$0.50 | ~$5 |
+| Step Functions + Lambda (paginated) | ~$1-3 | ~$10-20 |
+| ECS Fargate (15 min task) | ~$5 | ~$30 |
+| Glue Python Shell (for comparison) | ~$13 | ~$160 |
+
+### Pre-Deployment Validation (API-specific)
+
+- Verify API endpoint is reachable: `curl -I {base_url}` returns 200
+- Verify credentials: test single API call returns data (not 401/403)
+- Verify rate limit: check API docs, configure appropriate schedule
+- Verify response format: confirm JSON structure matches expectations
 
 ---
 
