@@ -424,6 +424,137 @@ Examples:
 
 ---
 
+## Source Registry (DynamoDB)
+
+Every onboarded source is tracked in a DynamoDB table. This provides:
+- **Audit trail** — who onboarded what, when, and where it lands
+- **Duplicate detection** — prevent re-onboarding the same source
+- **Inventory** — single place to see all active landing pipelines
+- **Decommission tracking** — record when and why sources are retired
+
+### Table Schema
+
+```
+Table: SourceRegistry
+  Partition Key: source_id (String — UUID)
+  Sort Key: None
+
+  GSI-1: source_name-index (source_name → source_id)
+  GSI-2: status-index (status → source_id)
+  GSI-3: domain-index (domain → source_id)
+```
+
+### Attributes
+
+| Attribute | Type | Description |
+|---|---|---|
+| `source_id` | String | UUID, primary key |
+| `source_name` | String | Human identifier (e.g., `aurora-orders`) |
+| `domain` | String | Business domain (e.g., `sales`, `marketing`) |
+| `source_type` | String | `database`, `saas`, `streaming`, `files`, `on-prem` |
+| `ingestion_service` | String | `dms`, `appflow`, `firehose`, `transfer-family`, `datasync` |
+| `landing_path` | String | S3 path where data lands |
+| `landing_bucket` | String | S3 bucket name |
+| `status` | String | `active`, `stopped`, `decommissioned` |
+| `schedule` | String | `real-time`, `hourly`, `daily`, `weekly`, `one-time` |
+| `onboarded_at` | String | ISO 8601 timestamp |
+| `onboarded_by` | String | User/team who onboarded |
+| `decommissioned_at` | String | ISO 8601 (if decommissioned) |
+| `terraform_state` | String | Path to Terraform state file |
+| `profiling_enabled` | Boolean | Whether DataBrew/Athena profiling is configured |
+| `tags` | Map | User-defined tags (team, cost-center, project) |
+| `notes` | String | Free text (reason for onboarding, special requirements) |
+
+### Terraform Resource
+
+```hcl
+resource "aws_dynamodb_table" "source_registry" {
+  name         = "${var.naming_prefix}-source-registry"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "source_id"
+
+  attribute {
+    name = "source_id"
+    type = "S"
+  }
+  attribute {
+    name = "source_name"
+    type = "S"
+  }
+  attribute {
+    name = "status"
+    type = "S"
+  }
+  attribute {
+    name = "domain"
+    type = "S"
+  }
+
+  global_secondary_index {
+    name            = "source_name-index"
+    hash_key        = "source_name"
+    projection_type = "ALL"
+  }
+  global_secondary_index {
+    name            = "status-index"
+    hash_key        = "status"
+    projection_type = "ALL"
+  }
+  global_secondary_index {
+    name            = "domain-index"
+    hash_key        = "domain"
+    projection_type = "ALL"
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_dynamodb_table_item" "source_entry" {
+  table_name = aws_dynamodb_table.source_registry.name
+  hash_key   = aws_dynamodb_table.source_registry.hash_key
+
+  item = jsonencode({
+    source_id          = {S = var.source_id}
+    source_name        = {S = var.source_name}
+    domain             = {S = var.domain}
+    source_type        = {S = var.source_type}
+    ingestion_service  = {S = var.ingestion_service}
+    landing_path       = {S = "s3://${var.landing_bucket}/${var.domain}/${var.source_name}/"}
+    landing_bucket     = {S = var.landing_bucket}
+    status             = {S = "active"}
+    schedule           = {S = var.schedule}
+    onboarded_at       = {S = timestamp()}
+    onboarded_by       = {S = var.onboarded_by}
+    profiling_enabled  = {BOOL = var.profiling_enabled}
+    tags               = {M = var.resource_tags}
+  })
+}
+```
+
+### Usage in the Workflow
+
+| When | Action |
+|---|---|
+| **Before onboarding** (Existing Resource Scan) | Query registry to check if source already onboarded |
+| **After Terraform apply** | Write entry with `status=active` |
+| **Monitoring** | Query `status-index` for all active sources |
+| **Decommissioning** | Update `status=decommissioned`, set `decommissioned_at` |
+| **Inventory view** | Scan or query by domain/status for full picture |
+
+### Duplicate Detection
+
+```bash
+aws dynamodb query \
+  --table-name {prefix}-source-registry \
+  --index-name source_name-index \
+  --key-condition-expression "source_name = :name" \
+  --expression-attribute-values '{":name": {"S": "aurora-orders"}}'
+```
+
+If found with `status=active` → warn user, ask if they want to update or skip.
+
+---
+
 ## Project Structure (Generated Per Source)
 
 ```
@@ -432,6 +563,7 @@ Examples:
 │   └── source-config.yaml          # Source details, schedule, service choice
 ├── terraform/
 │   ├── main.tf                     # Landing infra (DMS/AppFlow/Firehose/etc. + S3)
+│   ├── registry.tf                 # DynamoDB Source Registry table + entry
 │   ├── profiling.tf                # DataBrew dataset + profile job
 │   ├── variables.tf                # Input variables
 │   ├── outputs.tf                  # Output values (S3 paths, ARNs)

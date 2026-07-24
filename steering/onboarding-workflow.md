@@ -40,10 +40,20 @@ Ask 1-2 questions per turn. 5 turns max.
 | 2 | One-time load or recurring? If recurring, freshness? (real-time / hourly / daily / weekly) | Determine sync mode |
 | 3 | Approximate volume per batch? | Size the service |
 | — | → Recommend service + show cost estimate → user confirms | — |
-| 4 | Connection details (endpoint, credentials location, etc.) | Configure the service |
-| 5 | Want a profiling report after data lands? (recommended) | Enable/skip profiling |
+| 4 | Naming convention, tags, existing resource scan + **registry duplicate check** | Reuse + prevent duplicates |
+| 5 | Connection details (endpoint, credentials location, etc.) | Configure the service |
+| 6 | Want a profiling report after data lands? (recommended) | Enable/skip profiling |
 
-**After Turn 5:** proceed directly to validation → deploy.
+**Registry check at Turn 4:**
+```bash
+aws dynamodb query --table-name {prefix}-source-registry \
+  --index-name source_name-index \
+  --key-condition-expression "source_name = :name" \
+  --expression-attribute-values '{":name": {"S": "{source_name}"}}'
+```
+If found with `status=active` → warn: "This source is already onboarded. Update or skip?"
+
+**After Turn 6:** proceed directly to validation → deploy.
 
 ---
 
@@ -91,4 +101,4 @@ An onboarding is complete when:
 - [ ] Schedule running (if recurring)
 - [ ] CloudWatch alarm configured for pipeline failure
 - [ ] Profiling report published (if requested)
-- [ ] Source registered in inventory (if Source Registry exists)
+- [ ] **Source registered in DynamoDB Source Registry with `status=active`**

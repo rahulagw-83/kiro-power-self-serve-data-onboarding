@@ -60,7 +60,18 @@ aws secretsmanager delete-secret \
 
 Use 7-day recovery window (not force-delete) in case rollback needed.
 
-### 6. Notify
+### 6. Update Source Registry
+
+```bash
+aws dynamodb update-item \
+  --table-name {prefix}-source-registry \
+  --key '{"source_id": {"S": "{source_id}"}}' \
+  --update-expression "SET #s = :status, decommissioned_at = :ts" \
+  --expression-attribute-names '{"#s": "status"}' \
+  --expression-attribute-values '{":status": {"S": "decommissioned"}, ":ts": {"S": "{ISO8601_now}"}}'
+```
+
+### 7. Notify
 
 - Inform requesting team that pipeline is decommissioned
 - Record decommission date and reason
@@ -71,6 +82,7 @@ Use 7-day recovery window (not force-delete) in case rollback needed.
 - [ ] Terraform infrastructure destroyed
 - [ ] S3 data retention decision made (keep/delete/archive)
 - [ ] Secrets scheduled for deletion
+- [ ] **Source Registry updated: status = decommissioned**
 - [ ] Team notified
 
 ## MUST Rules
