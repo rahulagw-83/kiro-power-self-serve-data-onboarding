@@ -20,9 +20,10 @@ PII candidates, and recommendations for downstream teams.
 
 ## Philosophy
 
-**Profile, don't enforce.** The report is informational. It helps downstream
-teams plan their processing (medallion architecture, quality rules, masking).
-This skill does not act on findings or block anything.
+**DataBrew first time, ask second time.** The first source gets DataBrew automatically
+(richest output, zero code, visual for stakeholders). When the user comes back for a
+second source, offer cheaper alternatives (Athena SQL, Macie, Crawler) based on their
+needs — recurring profiling at scale doesn't need $2-4/run when $0.03/run does the job.
 
 ## Workflow
 
@@ -89,6 +90,8 @@ Applied on top of DataBrew statistics:
 
 ## MUST Rules
 
+- MUST use DataBrew for first-time profiling of any source (default, don't ask)
+- MUST offer cheaper alternatives (Athena SQL, Macie, Crawler) on 2nd+ source onboarding
 - MUST profile Landing S3 data (not source directly)
 - MUST flag PII candidates using name + value patterns
 - MUST NOT enforce any rule or block any pipeline

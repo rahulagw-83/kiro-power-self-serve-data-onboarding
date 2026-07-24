@@ -9,12 +9,74 @@ anything or block pipelines.
 
 ---
 
-## Preferred Service: AWS Glue DataBrew (Profile Job)
+## Preferred Service: AWS Glue DataBrew (First Source — Default)
+
+For the **first source onboarded** (or first time profiling any source), default to
+DataBrew without asking. It provides the richest output with zero code.
 
 - Zero code — auto-generates comprehensive statistics
 - Outputs JSON report to S3 + visual in DataBrew console
 - Schedulable (run after each ingestion batch)
 - Covers: types, nulls, distributions, cardinality, correlations
+- Cost: ~$1.00/node per 30-min session
+
+## Alternatives (Offer on 2nd+ Source)
+
+When the user onboards subsequent sources, present cheaper options:
+
+| Option | Cost (5 GB) | PII Detection | Full Statistics | When to Use |
+|---|---|---|---|---|
+| **DataBrew** | ~$2-4 | ✅ Built-in | ✅ Full | First source, visual stakeholder reports |
+| **Athena SQL** | ~$0.03 | ✅ Custom regex | ✅ Custom SQL | Recurring, many sources, budget-constrained |
+| **Amazon Macie** | ~$5 | ✅ Best accuracy | ❌ None | Compliance-focused PII scanning |
+| **Glue Crawler** | Free | ❌ None | ❌ Schema only | Just need column names + types registered |
+
+### Athena SQL Profiling (cheapest recurring option)
+
+```sql
+-- Column stats
+SELECT
+  COUNT(*) as total_rows,
+  COUNT(DISTINCT order_id) as unique_order_ids,
+  SUM(CASE WHEN customer_email IS NULL THEN 1 ELSE 0 END) as email_nulls,
+  MIN(order_date) as earliest_date,
+  MAX(order_date) as latest_date,
+  AVG(total_amount) as avg_amount
+FROM "default"."landing_orders"
+WHERE year = '2025' AND month = '07' AND day = '21';
+
+-- PII detection via regex
+SELECT column_name, 
+  SUM(CASE WHEN regexp_like(CAST(column_value AS VARCHAR), '[\w.+-]+@[\w-]+\.[\w.-]+') THEN 1 ELSE 0 END) as email_matches
+FROM ...
+```
+
+### Amazon Macie (best PII accuracy)
+
+```hcl
+resource "aws_macie2_classification_job" "landing_scan" {
+  name          = "${var.source_name}-pii-scan"
+  job_type      = "ONE_TIME"
+
+  s3_job_definition {
+    bucket_definitions {
+      account_id = data.aws_caller_identity.current.account_id
+      buckets    = [var.landing_bucket]
+    }
+    scoping {
+      includes {
+        and {
+          simple_scope_term {
+            key        = "OBJECT_KEY"
+            comparator = "STARTS_WITH"
+            values     = ["${var.domain}/${var.source_name}/"]
+          }
+        }
+      }
+    }
+  }
+}
+```
 
 **Alternative:** Athena SQL queries for lightweight custom profiling when
 DataBrew is not available or cost is a concern.

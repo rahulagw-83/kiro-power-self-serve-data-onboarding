@@ -309,12 +309,51 @@ Before generating or deploying ANY infrastructure, ALL checks must pass:
 
 After data lands in S3, run a profiling job and publish a report.
 
-**Preferred service:** AWS Glue DataBrew (Profile Job)
+### Profiling Strategy: First Source vs Subsequent Sources
+
+| Context | Approach | Why |
+|---|---|---|
+| **First source onboarded** (or first time for this source) | **AWS Glue DataBrew** | Richest output, zero code, visual console for stakeholders, comprehensive stats |
+| **Subsequent sources** (user already has profiling running) | **Ask the user** — offer cheaper alternatives | At scale, DataBrew cost adds up |
+
+**First-time behavior (default):** Use DataBrew. Don't ask — just do it.
+
+**When user onboards their 2nd+ source, ask:**
+
+> "You already have DataBrew profiling running for {previous_source}. For recurring
+> profiling across multiple sources, there are cheaper options:
+>
+> 1. **Keep DataBrew** (~$2-4/run) — richest output, visual console
+> 2. **Athena SQL** (~$0.03/run) — 100× cheaper, runs in seconds, custom SQL
+> 3. **Amazon Macie** (~$1/GB) — best PII detection accuracy, compliance-focused
+> 4. **Glue Crawler** (free) — schema detection only, no statistics
+>
+> Which approach for this source?"
+
+### Profiling Service Details
+
+**Option 1: AWS Glue DataBrew (default for first source)**
 - Zero code, auto-generates comprehensive statistics
 - Outputs JSON report to S3 + visual in DataBrew console
 - Schedulable after each ingestion
+- Cost: ~$1.00/node per 30-min session
 
-**Alternative:** Athena SQL queries for lightweight custom profiling
+**Option 2: Amazon Athena SQL (cheapest for recurring)**
+- $5/TB scanned — profiling 5 GB costs ~$0.025
+- Custom SQL gives full control over what's profiled
+- Runs in seconds, results via query output
+- PII detection: custom regex in SQL (you write the patterns)
+
+**Option 3: Amazon Macie (best for PII/compliance)**
+- Purpose-built for sensitive data detection in S3
+- Best accuracy for PII/PHI classification
+- Cost: ~$1/GB scanned
+- No column statistics — PII-focused only
+
+**Option 4: Glue Crawler (free, schema only)**
+- Detects column names and types only
+- No statistics, no PII detection, no cardinality
+- Good enough when you just need schema registered in Glue Catalog
 
 ### Profiling Report Contents
 
